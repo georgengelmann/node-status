@@ -11,5 +11,5 @@
     $node[1]['pass'] = ''; // RPC password
     $node[1]['ip'] = '';   // RPC IP
     $node[1]['port'] = ''; // RPC port
-	// define more nodes with $node[2], $node[3], $node[4]
+    // define more nodes with $node[2], $node[3], $node[4]
 ?>
