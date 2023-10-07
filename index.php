@@ -132,7 +132,9 @@ if (
     ?>
 
     <h3>Connected nodes</h3>
-    <table>
+	<div id="select-container"></div>
+    <table id="datatable">
+		
         <thead>
 			<tr>
 			<?php
@@ -151,8 +153,9 @@ if (
             <th>Block height</th>
             <th>Bytes (sent)</th>
             <th>Bytes (received)</th>
+			<th>Ban score</th>
             <th>Ping</th>
-        </tr>
+        	</tr>
         </thead>
         <tbody>
         <?php
@@ -186,12 +189,15 @@ if (
            	echo "    <tr>\n    ";
 			
 			if (isset($config['abuseipdbapikey'])) {
-				echo "<td data-label=\"Country\">" . $abuseipdb['countryCode'] . "&nbsp;" 
-					. $emoji_flags[$abuseipdb['countryCode']] . 
-					"&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
-					. $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $abuseipdb["abuseConfidenceScore"] .
-					"</a>&nbsp;</td><td data-label=\"Usage type\">" . $abuseipdb['usageType'] .
-					"&nbsp;</td><td data-label=\"ISP\">" . $abuseipdb['isp'] . "&nbsp;</td>";
+				echo "<td data-label=\"Country\" ondoubleclick=\"sortTable(0)\">" . $abuseipdb['countryCode'] . "&nbsp;" 
+					 . $emoji_flags[$abuseipdb['countryCode']];
+				if ($abuseipdb['isTor'] === true) {
+					echo "&nbsp;Tor &#x1F9C5;";
+				}
+				echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
+					 . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $abuseipdb["abuseConfidenceScore"] .
+					 "</a>&nbsp;</td><td data-label=\"Usage type\">" . $abuseipdb['usageType'] .
+					 "&nbsp;</td><td data-label=\"ISP\">" . $abuseipdb['isp'] . "&nbsp;</td>";
 			}
 
 			if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
@@ -213,6 +219,7 @@ if (
 				"&nbsp;</td><td data-label=\"Block height\">" . $peer['startingheight'] .
 				"&nbsp;</td><td data-label=\"Bytes (sent)\">" . formatBytes($peer['bytessent']) .
 				"&nbsp;</td><td data-label=\"Bytes (received)\">" . formatBytes($peer['bytesrecv']) .
+				"&nbsp;</td><td data-label=\"Ban score\">" . $peer['banscore'] .
 				"&nbsp;</td><td data-label=\"Ping\">" . $peer['pingtime'] .
 				"&nbsp;</td>\n    </tr>\n";
         }
@@ -235,6 +242,7 @@ if (
         </p>
     </nav>
 	<p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2023 Georg Engelmann</p>
+	<script src="script/main.js"></script>
 </footer>
 </body>
 </html>
