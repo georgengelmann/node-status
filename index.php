@@ -173,7 +173,7 @@ if (
                 $peer_host = gethostbyaddr($peer_host[0]);
             }
 			
-			if (isset($config['abuseipdbapikey']) && preg_match('/^[a-z0-9]{80}$/', $config['abuseipdbapikey'])) {
+			if (isset($config['abuseipdbapikey'])) {
 				$abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdbapikey'], $db, $config['dbtable']);
 			}
 				
@@ -185,7 +185,7 @@ if (
 			
            	echo "    <tr>\n    ";
 			
-			if (isset($config['abuseipdbapikey']) && preg_match('/^[a-z0-9]{80}$/', $config['abuseipdbapikey'])) {
+			if (isset($config['abuseipdbapikey'])) {
 				echo "<td data-label=\"Country\">" . $abuseipdb['countryCode'] . "&nbsp;" 
 					. $emoji_flags[$abuseipdb['countryCode']] . 
 					"&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
@@ -211,8 +211,8 @@ if (
 				"&nbsp;</td><td data-label=\"Direction\">" . $direction .
 				"&nbsp;</td><td data-label=\"Connection time\">" . secondsToTime($conntime) .
 				"&nbsp;</td><td data-label=\"Block height\">" . $peer['startingheight'] .
-				"&nbsp;</td><td data-label=\"Bytes (sent)\">" . $peer['bytessent'] .
-				"&nbsp;</td><td data-label=\"Bytes (received)\">" . $peer['bytesrecv'] .
+				"&nbsp;</td><td data-label=\"Bytes (sent)\">" . formatBytes($peer['bytessent']) .
+				"&nbsp;</td><td data-label=\"Bytes (received)\">" . formatBytes($peer['bytesrecv']) .
 				"&nbsp;</td><td data-label=\"Ping\">" . $peer['pingtime'] .
 				"&nbsp;</td>\n    </tr>\n";
         }
@@ -234,6 +234,7 @@ if (
             ?>
         </p>
     </nav>
+	<p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2023 Georg Engelmann</p>
 </footer>
 </body>
 </html>

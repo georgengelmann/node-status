@@ -66,6 +66,18 @@ function getIPv6($host)
 }
 
 /**
+ * Checks if a given string is a valid IP address (IPv4 or IPv6).
+ *
+ * @param string $ip The IP address to be validated.
+ *
+ * @return bool Returns true if the input string is a valid IP address (IPv4 or IPv6),
+ *              otherwise returns false.
+ */
+function isIP($ip) {
+    return filter_var($ip, FILTER_VALIDATE_IP) !== false;
+}
+
+/**
  * Check if an IP address exists in a database table, and if not, perform a DNSBL lookup.
  *
  * @param string $ip The IP address to check.
@@ -75,55 +87,59 @@ function getIPv6($host)
  * @return mixed Returns the DNSBL lookup result or a database result if found.
  */
 function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null) {
-    // Check if the database connection and table name are provided
-    if ($db !== null && $table !== null) {
-        // Check if the IP address exists in the database
-        $query = "SELECT dnsbl FROM $table WHERE ip_address = '$ip'";
-        $result = mysqli_query($db, $query);
-        if ($result) {
-            $row = mysqli_fetch_assoc($result);
-            if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
-                return $row['dnsbl'];
-            }
-        }
-    }
-
-    // IP data is not in the database or no database connection is provided,
-    // perform the DNSBL lookup
-    $listed = '';
-
-    if ($ip) {
-        $reverse_ip = implode('.', array_reverse(explode('.', $ip)));
-        foreach ($dnsbl_lookup as $host) {
-            if (checkdnsrr($reverse_ip . '.' . $host . '.', 'A')) {
-                $listed .= $reverse_ip . '.' . $host . ' <span class="dnsbl-listed">Listed</span><br />';
-            }
-        }
-    }
-
-    if (empty($listed)) {
-        $result = 'A record was not found';
-		
+	if (isIP($ip) && is_array($dnsbl_lookup) && !getIPv6($ip)) {
+		// Check if the database connection and table name are provided
 		if ($db !== null && $table !== null) {
-			$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$result') 
-				ON DUPLICATE KEY UPDATE dnsbl = '$result'";
-			
-			mysqli_query($db, $insert_query);
+			// Check if the IP address exists in the database
+			$query = "SELECT dnsbl FROM $table WHERE ip_address = '$ip'";
+			$result = mysqli_query($db, $query);
+			if ($result) {
+				$row = mysqli_fetch_assoc($result);
+				if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
+					return $row['dnsbl'];
+				}
+			}
 		}
-		
-    } else {
-        // If a database connection and table name are provided, store the DNSBL lookup result
-        if ($db !== null && $table !== null) {
-            // Use REPLACE INTO to insert or replace the data
-            $insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$listed') 
-                ON DUPLICATE KEY UPDATE dnsbl = '$listed'";
-            mysqli_query($db, $insert_query);
-        }
 
-        $result = $listed;
-    }
+		// IP data is not in the database or no database connection is provided,
+		// perform the DNSBL lookup
+		$listed = '';
 
-    return $result;
+		if ($ip) {
+			$reverse_ip = implode('.', array_reverse(explode('.', $ip)));
+			foreach ($dnsbl_lookup as $host) {
+				if (checkdnsrr($reverse_ip . '.' . $host . '.', 'A')) {
+					$listed .= $reverse_ip . '.' . $host . ' <span class="dnsbl-listed">Listed</span><br />';
+				}
+			}
+		}
+
+		if (empty($listed)) {
+			$result = 'A record was not found';
+			
+			if ($db !== null && $table !== null) {
+				$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$result') 
+					ON DUPLICATE KEY UPDATE dnsbl = '$result'";
+				
+				mysqli_query($db, $insert_query);
+			}
+			
+		} else {
+			// If a database connection and table name are provided, store the DNSBL lookup result
+			if ($db !== null && $table !== null) {
+				// Use REPLACE INTO to insert or replace the data
+				$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$listed') 
+					ON DUPLICATE KEY UPDATE dnsbl = '$listed'";
+				mysqli_query($db, $insert_query);
+			}
+
+			$result = $listed;
+		}
+
+		return $result;
+	} else {
+		return 0;
+	}
 }
 
 /**
@@ -136,50 +152,54 @@ function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null) {
  * @return mixed Returns the abuse data as an array if found, or 0 if not found.
  */
 function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null) {
-    // Check if the database connection and table name are provided
-    if ($db !== null && $table !== null) {
-        // Check if the IP is already in the database
-        $query = "SELECT * FROM $table WHERE ip_address = '$ip'";
-        $result = mysqli_query($db, $query);
+	if (isIP($ip) && preg_match('/^[a-z0-9]{80}$/', $apikey)) {
+		// Check if the database connection and table name are provided
+		if ($db !== null && $table !== null) {
+			// Check if the IP is already in the database
+			$query = "SELECT * FROM $table WHERE ip_address = '$ip'";
+			$result = mysqli_query($db, $query);
 
-        if ($result && mysqli_num_rows($result) > 0) {
-            // IP data is already in the database, fetch and return it
-            $row = mysqli_fetch_assoc($result);
-            return json_decode($row['abuse_data'], true);
-        }
-    }
+			if ($result && mysqli_num_rows($result) > 0) {
+				// IP data is already in the database, fetch and return it
+				$row = mysqli_fetch_assoc($result);
+				return json_decode($row['abuse_data'], true);
+			}
+		}
 
-    // IP data is not in the database or no database connection is provided,
-    // make the AbuseIPDB API request
-    $client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
-    curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
-    curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
-    $api_result = curl_exec($client);
-    curl_close($client);
-    $api_res = json_decode($api_result, true);
+		// IP data is not in the database or no database connection is provided,
+		// make the AbuseIPDB API request
+		$client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
+		curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
+		curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
+		$api_result = curl_exec($client);
+		curl_close($client);
+		$api_res = json_decode($api_result, true);
 
-    if ($api_res["data"]) {
-        // If a database connection and table name are provided, store the API result in the database
-        if ($db !== null && $table !== null) {
-            $abuse_data = json_encode($api_res["data"]);
-            // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
-            $insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
-                ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
-            mysqli_query($db, $insert_query);
-        }
+		if ($api_res["data"]) {
+			// If a database connection and table name are provided, store the API result in the database
+			if ($db !== null && $table !== null) {
+				$abuse_data = json_encode($api_res["data"]);
+				// Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
+				$insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
+					ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
+				mysqli_query($db, $insert_query);
+			}
 
-        return $api_res["data"];
-    } else {
-        // If no data is returned from the API, update the database entry with an empty abuse_data
-        if ($db !== null && $table !== null) {
-            $abuse_data = json_encode([]);
-            $insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
-                ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
-            mysqli_query($db, $insert_query);
-        }
+			return $api_res["data"];
+		} else {
+			// If no data is returned from the API, update the database entry with an empty abuse_data
+			if ($db !== null && $table !== null) {
+				$abuse_data = json_encode([]);
+				$insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
+					ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
+				mysqli_query($db, $insert_query);
+			}
 
-        return 0;
-    }
+			return 0;
+		}
+	} else {
+		return 0;
+	}
 }
 
 /**
