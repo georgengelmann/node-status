@@ -4,7 +4,6 @@
  *
  * @param int     $size      Size in bytes
  * @param int     $precision Number of decimal places to round to (default: 2)
- *
  * @return string Formatted size with appropriate suffix (e.g., KB, MB)
  */
 function formatBytes($size, $precision = 2)
@@ -22,14 +21,6 @@ function formatBytes($size, $precision = 2)
  * Convert seconds into a human-readable time format.
  *
  * @param int $seconds Time in seconds
- *
- * @return string Human-readable time format (e.g., 2 days, 3 hours, 45 minutes, and 30 seconds)
- */
-/**
- * Convert seconds into a human-readable time format.
- *
- * @param int $seconds Time in seconds
- *
  * @return string Human-readable time format (e.g., 2 days, 3 hours, 45 minutes, and 30 seconds)
  */
 function secondsToTime($seconds)
@@ -64,7 +55,6 @@ function secondsToTime($seconds)
  * Extract IPv6 address from a given host string.
  *
  * @param string $host Host string possibly containing an IPv6 address
- *
  * @return string Extracted IPv6 address (empty string if not found)
  */
 function getIPv6($host)
@@ -76,35 +66,30 @@ function getIPv6($host)
 }
 
 /**
- * Perform DNSBL lookup for an IP address.
+ * Check if an IP address exists in a database table, and if not, perform a DNSBL lookup.
  *
- * @param string $ip IP address to check against DNSBLs
- *
- * @return string Result of the DNSBL lookup (Listed or not, or an error message)
+ * @param string $ip The IP address to check.
+ * @param array $dnsbl_lookup An array of DNSBL hosts to check against.
+ * @param mysqli|null $db The database connection (optional).
+ * @param string|null $table The name of the database table (optional).
+ * @return mixed Returns the DNSBL lookup result or a database result if found.
  */
-function dnsbllookup($ip)
-{
-    // List of DNSBLs to check against
-    $dnsbl_lookup = [
-        "all.s5h.net","b.barracudacentral.org","bl.spamcop.net",
-		"blacklist.woody.ch","bogons.cymru.com","cbl.abuseat.org",    
-		"combined.abuse.ch","db.wpbl.info","dnsbl-1.uceprotect.net",
-		"dnsbl-2.uceprotect.net","dnsbl-3.uceprotect.net","dnsbl.dronebl.org",
-		"dnsbl.sorbs.net","drone.abuse.ch","duinv.aupads.org","dnsbl.dronebl.org",
-		"dul.dnsbl.sorbs.net","dyna.spamrats.com","http.dnsbl.sorbs.net",
-		"ips.backscatterer.org","ix.dnsbl.manitu.net","list.dsbl.org","korea.services.net",
-		"misc.dnsbl.sorbs.net","noptr.spamrats.com","orvedb.aupads.org",
-		"pbl.spamhaus.org","proxy.bl.gweep.ca","psbl.surriel.com",
-		"relays.bl.gweep.ca","relays.nether.net","sbl.spamhaus.org",
-		"singular.ttk.pte.hu","smtp.dnsbl.sorbs.net","socks.dnsbl.sorbs.net",
-		"spam.abuse.ch","spam.dnsbl.anonmails.de","spam.dnsbl.sorbs.net",
-		"spam.spamrats.com","spambot.bls.digibase.ca","spamrbl.imp.ch",
-		"spamsources.fabel.dk","ubl.lashback.com","ubl.unsubscore.com",
-		"virus.rbl.jp","web.dnsbl.sorbs.net","wormrbl.imp.ch",
-		"xbl.spamhaus.org","z.mailspike.net","zen.spamhaus.org",
-		"zombie.dnsbl.sorbs.net"
-    ];
+function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null) {
+    // Check if the database connection and table name are provided
+    if ($db !== null && $table !== null) {
+        // Check if the IP address exists in the database
+        $query = "SELECT dnsbl FROM $table WHERE ip_address = '$ip'";
+        $result = mysqli_query($db, $query);
+        if ($result) {
+            $row = mysqli_fetch_assoc($result);
+            if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
+                return $row['dnsbl'];
+            }
+        }
+    }
 
+    // IP data is not in the database or no database connection is provided,
+    // perform the DNSBL lookup
     $listed = '';
 
     if ($ip) {
@@ -117,9 +102,110 @@ function dnsbllookup($ip)
     }
 
     if (empty($listed)) {
-        return 'A record was not found';
+        $result = 'A record was not found';
+		
+		if ($db !== null && $table !== null) {
+			$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$result') 
+				ON DUPLICATE KEY UPDATE dnsbl = '$result'";
+			
+			mysqli_query($db, $insert_query);
+		}
+		
     } else {
-        return $listed;
+        // If a database connection and table name are provided, store the DNSBL lookup result
+        if ($db !== null && $table !== null) {
+            // Use REPLACE INTO to insert or replace the data
+            $insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$listed') 
+                ON DUPLICATE KEY UPDATE dnsbl = '$listed'";
+            mysqli_query($db, $insert_query);
+        }
+
+        $result = $listed;
     }
+
+    return $result;
+}
+
+/**
+ * Function to perform AbuseIPDB checks.
+ *
+ * @param string $ip IP address to check.
+ * @param string $apikey AbuseIPDB.com API key.
+ * @param mysqli|null $db Database connection (optional).
+ * @param string|null $table Name of the database table (optional).
+ * @return mixed Returns the abuse data as an array if found, or 0 if not found.
+ */
+function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null) {
+    // Check if the database connection and table name are provided
+    if ($db !== null && $table !== null) {
+        // Check if the IP is already in the database
+        $query = "SELECT * FROM $table WHERE ip_address = '$ip'";
+        $result = mysqli_query($db, $query);
+
+        if ($result && mysqli_num_rows($result) > 0) {
+            // IP data is already in the database, fetch and return it
+            $row = mysqli_fetch_assoc($result);
+            return json_decode($row['abuse_data'], true);
+        }
+    }
+
+    // IP data is not in the database or no database connection is provided,
+    // make the AbuseIPDB API request
+    $client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
+    curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
+    curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
+    $api_result = curl_exec($client);
+    curl_close($client);
+    $api_res = json_decode($api_result, true);
+
+    if ($api_res["data"]) {
+        // If a database connection and table name are provided, store the API result in the database
+        if ($db !== null && $table !== null) {
+            $abuse_data = json_encode($api_res["data"]);
+            // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
+            $insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
+                ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
+            mysqli_query($db, $insert_query);
+        }
+
+        return $api_res["data"];
+    } else {
+        // If no data is returned from the API, update the database entry with an empty abuse_data
+        if ($db !== null && $table !== null) {
+            $abuse_data = json_encode([]);
+            $insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
+                ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
+            mysqli_query($db, $insert_query);
+        }
+
+        return 0;
+    }
+}
+
+/**
+ * Establishes a MySQLi database connection and returns the database object.
+ *
+ * @param string $dbname The name of the database to connect to.
+ * @param string $dbuser The database username.
+ * @param string $dbpass The database password.
+ * @param string $dbhost The database host or IP address.
+ * @param string $dbport The database port (e.g., 3306 for MySQL).
+ * @return mysqli|false Returns a MySQLi database object on success, or `false` on failure.
+ */
+function establishDatabaseConnection($dbname, $dbuser, $dbpass, $dbhost, $dbport) {
+    // Create a new MySQLi connection
+    $db = new mysqli($dbhost, $dbuser, $dbpass, $dbname, $dbport);
+
+    // Check if the connection was successful
+    if ($db->connect_error) {
+        // Connection failed, return false
+        return false;
+    }
+
+    // Set the character set to UTF-8 (or your preferred character set)
+    $db->set_charset("utf8");
+
+    // Return the MySQLi database object
+    return $db;
 }
 ?>
