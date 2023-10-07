@@ -36,7 +36,27 @@ try {
     $uptime = $bitcoin->uptime();
     $networkInfo = $bitcoin->getnettotals();
     $blockchainInfo = $bitcoin->getblockchaininfo();
-    $peerInfo = $bitcoin->getpeerinfo();
+    if (!isset($_GET['showbanned'])) {
+    	$peerInfo = $bitcoin->getpeerinfo();
+	} else {
+		$peerInfo = array();
+		$banned_nodes = $bitcoin->listbanned();
+		foreach ($banned_nodes as $banned_node) {
+			list($ipAddress, $subnetMask) = explode('/', $banned_node['address']);
+			if ($ipAddress !== "" && $ipAddress !== null) {
+				$peerInfo[] = array(
+					"inbound" => true,
+					"addr" => "$ipAddress:8333",
+					"subver" => "$banned_node[reason]",
+					"conntime" => 0,
+					"startingheight" => 0,
+					"bytessent" => 0,
+					"bytesrecv" => 0,
+					"pingtime" => 0
+				);
+			}
+		}
+	}
 } catch (Exception $e) {
     // Output the error message from the exception
     error_log("Bitcoin connection error: " . $e->getMessage());
