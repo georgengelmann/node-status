@@ -13,7 +13,9 @@ CREATE TABLE `status` (
   `id` int(10) UNSIGNED NOT NULL,
   `ip_address` varchar(255) NOT NULL,
   `abuse_data` text NOT NULL,
-  `dnsbl` text NOT NULL
+  `abuse_timestamp` timestamp NULL DEFAULT NULL,
+  `dnsbl` text NOT NULL,
+  `dnsbl_timestamp` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 

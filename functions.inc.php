@@ -84,62 +84,71 @@ function isIP($ip) {
  * @param array $dnsbl_lookup An array of DNSBL hosts to check against.
  * @param mysqli|null $db The database connection (optional).
  * @param string|null $table The name of the database table (optional).
+ * @param int $updateInterval The update interval in seconds (e.g., 24 hours).
  * @return mixed Returns the DNSBL lookup result or a database result if found.
  */
-function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null) {
-	if (isIP($ip) && is_array($dnsbl_lookup) && !getIPv6($ip)) {
-		// Check if the database connection and table name are provided
-		if ($db !== null && $table !== null) {
-			// Check if the IP address exists in the database
-			$query = "SELECT dnsbl FROM $table WHERE ip_address = '$ip'";
-			$result = mysqli_query($db, $query);
-			if ($result) {
-				$row = mysqli_fetch_assoc($result);
-				if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
-					return $row['dnsbl'];
-				}
-			}
-		}
+function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null, $updateInterval = 604800) {
+    if (isIP($ip) && is_array($dnsbl_lookup) && !getIPv6($ip)) {
+        // Check if the database connection and table name are provided
+        if ($db !== null && $table !== null) {
+            // Check if the IP address exists in the database and if the timestamp is not expired
+            $query = "SELECT dnsbl, dnsbl_timestamp FROM $table WHERE ip_address = '$ip'";
+            $result = mysqli_query($db, $query);
 
-		// IP data is not in the database or no database connection is provided,
-		// perform the DNSBL lookup
-		$listed = '';
+            if ($result) {
+                $row = mysqli_fetch_assoc($result);
+                if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
+                    $timestamp = strtotime($row['dnsbl_timestamp']);
+                    $currentTimestamp = time();
+                    // If the timestamp is still within the update interval, return the stored result
+                    if (($currentTimestamp - $timestamp) <= $updateInterval) {
+                        return $row['dnsbl'];
+                    }
+                }
+            }
+        }
+        
 
-		if ($ip) {
-			$reverse_ip = implode('.', array_reverse(explode('.', $ip)));
-			foreach ($dnsbl_lookup as $host) {
-				if (checkdnsrr($reverse_ip . '.' . $host . '.', 'A')) {
-					$listed .= $reverse_ip . '.' . $host . ' <span class="dnsbl-listed">Listed</span><br />';
-				}
-			}
-		}
+        // IP data is not in the database, or the timestamp is expired, perform the DNSBL lookup
+        $listed = '';
 
-		if (empty($listed)) {
-			$result = 'A record was not found';
-			
-			if ($db !== null && $table !== null) {
-				$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$result') 
-					ON DUPLICATE KEY UPDATE dnsbl = '$result'";
-				
-				mysqli_query($db, $insert_query);
-			}
-			
-		} else {
-			// If a database connection and table name are provided, store the DNSBL lookup result
-			if ($db !== null && $table !== null) {
-				// Use REPLACE INTO to insert or replace the data
-				$insert_query = "INSERT INTO $table (ip_address, dnsbl) VALUES ('$ip', '$listed') 
-					ON DUPLICATE KEY UPDATE dnsbl = '$listed'";
-				mysqli_query($db, $insert_query);
-			}
+        if ($ip) {
+            $reverse_ip = implode('.', array_reverse(explode('.', $ip)));
+            foreach ($dnsbl_lookup as $host) {
+                if (checkdnsrr($reverse_ip . '.' . $host . '.', 'A')) {
+                    $listed .= $reverse_ip . '.' . $host . ' <span class="dnsbl-listed">Listed</span><br />';
+                }
+            }
+        }
 
-			$result = $listed;
-		}
+        if (empty($listed)) {
+            $result = 'A record was not found';
 
-		return $result;
-	} else {
-		return 0;
-	}
+            if ($db !== null && $table !== null) {
+                // Update the database with the new result and timestamp
+                $timestamp = date('Y-m-d H:i:s');
+                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES ('$ip', '$result', '$timestamp') 
+                    ON DUPLICATE KEY UPDATE dnsbl = '$result', dnsbl_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+            }
+
+        } else {
+            // If a database connection and table name are provided, store the DNSBL lookup result and timestamp
+            if ($db !== null && $table !== null) {
+                $timestamp = date('Y-m-d H:i:s');
+                // Use REPLACE INTO to insert or replace the data
+                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES ('$ip', '$listed', '$timestamp') 
+                    ON DUPLICATE KEY UPDATE dnsbl = '$listed', dnsbl_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+            }
+
+            $result = $listed;
+        }
+
+        return $result;
+    } else {
+        return 0;
+    }
 }
 
 /**
@@ -149,57 +158,63 @@ function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null) {
  * @param string $apikey AbuseIPDB.com API key.
  * @param mysqli|null $db Database connection (optional).
  * @param string|null $table Name of the database table (optional).
+ * @param int $updateInterval The update interval in seconds (e.g., 24 hours).
  * @return mixed Returns the abuse data as an array if found, or 0 if not found.
  */
-function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null) {
-	if (isIP($ip) && preg_match('/^[a-z0-9]{80}$/', $apikey)) {
-		// Check if the database connection and table name are provided
-		if ($db !== null && $table !== null) {
-			// Check if the IP is already in the database
-			$query = "SELECT * FROM $table WHERE ip_address = '$ip'";
-			$result = mysqli_query($db, $query);
+function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null, $updateInterval = 604800) {
+    if (isIP($ip) && preg_match('/^[a-z0-9]{80}$/', $apikey)) {
+        // Check if the database connection and table name are provided
+        if ($db !== null && $table !== null) {
+            // Check if the IP is already in the database and if the timestamp is not expired
+            $query = "SELECT * FROM $table WHERE ip_address = '$ip'";
+            $result = mysqli_query($db, $query);
 
-			if ($result && mysqli_num_rows($result) > 0) {
-				// IP data is already in the database, fetch and return it
-				$row = mysqli_fetch_assoc($result);
-				return json_decode($row['abuse_data'], true);
-			}
-		}
+            if ($result && mysqli_num_rows($result) > 0) {
+                $row = mysqli_fetch_assoc($result);
+                $timestamp = strtotime($row['abuse_timestamp']);
+                $currentTimestamp = time();
+                // If the timestamp is still within the update interval, return the stored result
+                if (($currentTimestamp - $timestamp) <= $updateInterval) {
+                    return json_decode($row['abuse_data'], true);
+                }
+            }
+        }
 
-		// IP data is not in the database or no database connection is provided,
-		// make the AbuseIPDB API request
-		$client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
-		curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
-		curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
-		$api_result = curl_exec($client);
-		curl_close($client);
-		$api_res = json_decode($api_result, true);
+        // IP data is not in the database, or the timestamp is expired, make the AbuseIPDB API request
+        $client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
+        curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
+        curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
+        $api_result = curl_exec($client);
+        curl_close($client);
+        $api_res = json_decode($api_result, true);
 
-		if ($api_res["data"]) {
-			// If a database connection and table name are provided, store the API result in the database
-			if ($db !== null && $table !== null) {
-				$abuse_data = json_encode($api_res["data"]);
-				// Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
-				$insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
-					ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
-				mysqli_query($db, $insert_query);
-			}
+        if ($api_res["data"]) {
+            // If a database connection and table name are provided, store the API result and timestamp
+            if ($db !== null && $table !== null) {
+                $abuse_data = json_encode($api_res["data"]);
+                $timestamp = date('Y-m-d H:i:s');
+                // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
+                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES ('$ip', '$abuse_data', '$timestamp') 
+                    ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data', abuse_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+            }
 
-			return $api_res["data"];
-		} else {
-			// If no data is returned from the API, update the database entry with an empty abuse_data
-			if ($db !== null && $table !== null) {
-				$abuse_data = json_encode([]);
-				$insert_query = "INSERT INTO $table (ip_address, abuse_data) VALUES ('$ip', '$abuse_data') 
-					ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data'";
-				mysqli_query($db, $insert_query);
-			}
+            return $api_res["data"];
+        } else {
+            // If no data is returned from the API, update the database entry with an empty abuse_data and timestamp
+            if ($db !== null && $table !== null) {
+                $abuse_data = json_encode([]);
+                $timestamp = date('Y-m-d H:i:s');
+                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES ('$ip', '$abuse_data', '$timestamp') 
+                    ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data', abuse_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+            }
 
-			return 0;
-		}
-	} else {
-		return 0;
-	}
+            return 0;
+        }
+    } else {
+        return 0;
+    }
 }
 
 /**

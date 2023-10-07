@@ -36,27 +36,28 @@ try {
     $uptime = $bitcoin->uptime();
     $networkInfo = $bitcoin->getnettotals();
     $blockchainInfo = $bitcoin->getblockchaininfo();
-    if (!isset($_GET['showbanned'])) {
-    	$peerInfo = $bitcoin->getpeerinfo();
-	} else {
-		$peerInfo = array();
-		$banned_nodes = $bitcoin->listbanned();
-		foreach ($banned_nodes as $banned_node) {
-			list($ipAddress, $subnetMask) = explode('/', $banned_node['address']);
-			if ($ipAddress !== "" && $ipAddress !== null) {
-				$peerInfo[] = array(
-					"inbound" => true,
-					"addr" => "$ipAddress:8333",
-					"subver" => "$banned_node[reason]",
-					"conntime" => 0,
-					"startingheight" => 0,
-					"bytessent" => 0,
-					"bytesrecv" => 0,
-					"pingtime" => 0
-				);
-			}
-		}
-	}
+    if (!isset($_GET['listbanned'])) {
+        $peerInfo = $bitcoin->getpeerinfo();
+    } else {
+        $peerInfo = array();
+        $banned_nodes = $bitcoin->listbanned();
+        foreach ($banned_nodes as $banned_node) {
+            list($ipAddress, $subnetMask) = explode('/', $banned_node['address']);
+            if ($ipAddress !== "" && $ipAddress !== null) {
+                $peerInfo[] = array(
+                    "inbound" => true,
+                    "addr" => "$ipAddress:8333",
+                    "subver" => $banned_node['reason'],
+                    "conntime" => 0,
+                    "startingheight" => 0,
+                    "bytessent" => 0,
+                    "bytesrecv" => 0,
+                    "pingtime" => 0
+                );
+            }
+        }
+    }
+    
 } catch (Exception $e) {
     // Output the error message from the exception
     error_log("Bitcoin connection error: " . $e->getMessage());
@@ -86,34 +87,33 @@ try {
 }
 
 if (
-	isset($config['dbname']) 
-	&& isset($config['dbpass'])
-	&& isset($config['dbuser'])
-	&& isset($config['dbtable']) 
-	&& isset($config['dbhost'])
-	&& isset($config ['dbport'])
+    isset($config['db_name']) 
+    && isset($config['db_pass'])
+    && isset($config['db_user'])
+    && isset($config['db_table']) 
+    && isset($config['db_host'])
+    && isset($config ['db_port'])
 ) {
-	try {
-		$db = establishDatabaseConnection(
-			$config['dbname'],
-			$config['dbuser'],
-			$config['dbpass'],
-			$config['dbhost'],
-			$config['dbport']
-		);
-	} catch (Exception $e) {
-		// Output the error message from the exception
-		error_log("Database connection error: " . $e->getMessage());
-		// Set default values
-		$db = null;
-		$config['dbtable'] = null;
-	}
+    try {
+        $db = establishDatabaseConnection(
+            $config['db_name'],
+            $config['db_user'],
+            $config['db_pass'],
+            $config['db_host'],
+            $config['db_port']
+        );
+    } catch (Exception $e) {
+        // Output the error message from the exception
+        error_log("Database connection error: " . $e->getMessage());
+        // Set default values
+        $db = null;
+        $config['db_table'] = null;
+    }
 } else {
-	$db = null;
-	$config['dbtable'] = null;
+    $db = null;
+    $config['db_table'] = null;
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -147,24 +147,24 @@ if (
             "Size: " . formatBytes($blockchainInfo['size_on_disk'], 2) . "</p>";
     } else {
         echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
-            "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
+             "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
     }
     ?>
 
     <h3>Connected nodes</h3>
-	<div id="select-container"></div>
+    <div id="select-container"></div>
     <table id="datatable">
-		
+        
         <thead>
-			<tr>
-			<?php
-			if (isset($config['abuseipdbapikey'])) {
-				echo "<th>Country</th>\n<th>Abuse score</th>\n<th>Usage type</th>\n<th>ISP</th>";
-			}
-			if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
-				echo "<th>DNSBL</th>\n";
-			}
-			?>		
+            <tr>
+            <?php
+            if (isset($config['abuseipdb_apikey'])) {
+                echo "<th>Country</th>\n<th>Abuse score</th>\n<th>Usage type</th>\n<th>ISP</th>";
+            }
+            if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
+                echo "<th>DNSBL</th>\n";
+            }
+            ?>        
             <th>Host</th>
             <th>IP:Port</th>
             <th>Version</th>
@@ -173,14 +173,14 @@ if (
             <th>Block height</th>
             <th>Bytes (sent)</th>
             <th>Bytes (received)</th>
-			<th>Ban score</th>
+            <th>Ban score</th>
             <th>Ping</th>
-        	</tr>
+            </tr>
         </thead>
         <tbody>
         <?php
         foreach ($peerInfo as $peer) {
-			
+            
             if ($peer['inbound'] == true) {
                 $direction = "inbound";
             } else {
@@ -195,53 +195,61 @@ if (
                 $current_ip = $peer_host[0];
                 $peer_host = gethostbyaddr($peer_host[0]);
             }
-			
-			if (isset($config['abuseipdbapikey'])) {
-				$abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdbapikey'], $db, $config['dbtable']);
-			}
-				
-			if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
-				$dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['dbtable']);
-			}
-				
+            
+            if (isset($config['abuseipdb_apikey'])) {
+                if (isset($config['abuseipdb_interval'])) {
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table'], $config['abuseipdb_interval']);
+                } else {
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table']);
+                }
+            }
+                
+            if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
+                if (isset($config['dnsbl_interval'])) {
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table'], $config['dnsbl_interval']);
+                } else {
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table']);
+                }
+            }
+                
             $conntime = strtotime("now") - $peer['conntime'];
-			
-           	echo "    <tr>\n    ";
-			
-			if (isset($config['abuseipdbapikey'])) {
-				echo "<td data-label=\"Country\" ondoubleclick=\"sortTable(0)\">" . $abuseipdb['countryCode'] . "&nbsp;" 
-					 . $emoji_flags[$abuseipdb['countryCode']];
-				if ($abuseipdb['isTor'] === true) {
-					echo "&nbsp;Tor &#x1F9C5;";
-				}
-				echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
-					 . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $abuseipdb["abuseConfidenceScore"] .
-					 "</a>&nbsp;</td><td data-label=\"Usage type\">" . $abuseipdb['usageType'] .
-					 "&nbsp;</td><td data-label=\"ISP\">" . $abuseipdb['isp'] . "&nbsp;</td>";
-			}
+            
+            echo "    <tr>\n    ";
+            
+            if (isset($config['abuseipdb_apikey'])) {
+                echo "<td data-label=\"Country\" ondoubleclick=\"sortTable(0)\">" . $abuseipdb['countryCode'] . "&nbsp;" 
+                     . $emoji_flags[$abuseipdb['countryCode']];
+                if ($abuseipdb['isTor'] === true) {
+                    echo "&nbsp;Tor &#x1F9C5;";
+                }
+                echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
+                     . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $abuseipdb["abuseConfidenceScore"] .
+                     "</a>&nbsp;</td><td data-label=\"Usage type\">" . $abuseipdb['usageType'] .
+                     "&nbsp;</td><td data-label=\"ISP\">" . $abuseipdb['isp'] . "&nbsp;</td>";
+            }
 
-			if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
-				echo "<td data-label=\"DNSBL\">" . $dnsbl . "&nbsp;</td>";
-			}
+            if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
+                echo "<td data-label=\"DNSBL\">" . $dnsbl . "&nbsp;</td>";
+            }
 
-			echo "<td data-label=\"Host\">" . $peer_host . "</td>";
-			
-			if (getIPv6($peer['addr']) != "") {
-				echo "<td data-label=\"IP:Port\">" . $peer['addr'] . "&nbsp;</td>"; 
-			} else {
-				echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
-					. $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
-			}
-			
-			echo "<td data-label=\"Version\">" . htmlentities($peer['subver']) .
-				"&nbsp;</td><td data-label=\"Direction\">" . $direction .
-				"&nbsp;</td><td data-label=\"Connection time\">" . secondsToTime($conntime) .
-				"&nbsp;</td><td data-label=\"Block height\">" . $peer['startingheight'] .
-				"&nbsp;</td><td data-label=\"Bytes (sent)\">" . formatBytes($peer['bytessent']) .
-				"&nbsp;</td><td data-label=\"Bytes (received)\">" . formatBytes($peer['bytesrecv']) .
-				"&nbsp;</td><td data-label=\"Ban score\">" . $peer['banscore'] .
-				"&nbsp;</td><td data-label=\"Ping\">" . $peer['pingtime'] .
-				"&nbsp;</td>\n    </tr>\n";
+            echo "<td data-label=\"Host\">" . $peer_host . "</td>";
+            
+            if (getIPv6($peer['addr']) != "") {
+                echo "<td data-label=\"IP:Port\">" . $peer['addr'] . "&nbsp;</td>"; 
+            } else {
+                echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
+                    . $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
+            }
+            
+            echo "<td data-label=\"Version\">" . htmlentities($peer['subver']) .
+                "&nbsp;</td><td data-label=\"Direction\">" . $direction .
+                "&nbsp;</td><td data-label=\"Connection time\">" . secondsToTime($conntime) .
+                "&nbsp;</td><td data-label=\"Block height\">" . $peer['startingheight'] .
+                "&nbsp;</td><td data-label=\"Bytes (sent)\">" . formatBytes($peer['bytessent']) .
+                "&nbsp;</td><td data-label=\"Bytes (received)\">" . formatBytes($peer['bytesrecv']) .
+                "&nbsp;</td><td data-label=\"Ban score\">" . $peer['banscore'] .
+                "&nbsp;</td><td data-label=\"Ping\">" . $peer['pingtime'] .
+                "&nbsp;</td>\n    </tr>\n";
         }
         ?>
         </tbody>
@@ -254,15 +262,15 @@ if (
             <?php
             $i = 1;
             foreach ($config['nodes'] as $nodes) {
-				echo "        <a href=\"?node=" . $i . '" title="' . $config['page_title'] . " (" . $nodes['name'] . ")\">"
-					 . $nodes['name'] . "</a>&nbsp;\n";
+                echo "        <a href=\"?node=" . $i . '" title="' . $config['page_title'] . " (" . $nodes['name'] . ")\">"
+                     . $nodes['name'] . "</a>&nbsp;\n";
                 $i++;
             }
             ?>
         </p>
     </nav>
-	<p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2023 Georg Engelmann</p>
-	<script src="script/main.js"></script>
+    <p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2023 Georg Engelmann</p>
+    <script src="script/main.js"></script>
 </footer>
 </body>
 </html>
