@@ -47,8 +47,8 @@ try {
                 $peerInfo[] = array(
                     "inbound" => true,
                     "addr" => "$ipAddress:8333",
-                    "subver" => $banned_node['reason'],
-                    "conntime" => 0,
+                    "subver" => $banned_node['ban_reason'],
+                    "conntime" => $banned_node['ban_created'],
                     "startingheight" => 0,
                     "bytessent" => 0,
                     "bytesrecv" => 0,
