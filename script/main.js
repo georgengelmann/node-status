@@ -1,4 +1,4 @@
-function searchTable(column) {
+function searchTable(column, showOnlyContaining) {
   // Declare variables
   var input, filter, table, tr, td, i, txtValue;
   input = document.getElementById("searchtable");
@@ -16,6 +16,17 @@ function searchTable(column) {
       } else {
         tr[i].style.display = "none";
       }
+	  if (showOnlyContaining == true) {
+	      for (var j = 0; j < tr[i].getElementsByTagName("td").length; j++) {
+	          if (j != column) {
+                  tr[i].getElementsByTagName("td")[j].style.display = "none";
+		      }
+          }
+	  } else {
+		  for (var j = 0; j < tr[i].getElementsByTagName("td").length; j++) {
+                  tr[i].getElementsByTagName("td")[j].style.display = "";
+          }
+	  }
     }
   }
 }
@@ -44,7 +55,7 @@ function createSelectFromTable(tableId) {
   var input = document.createElement("input");
   input.type = "text";
   input.id = "searchtable";
-  input.setAttribute("onkeyup", "searchTable(fieldSelector.value)");
+  input.setAttribute("onkeyup", "searchTable(fieldSelector.value, showonlycontaining.value)");
   input.placeholder = "Filter column";
 
   // Create a select element
@@ -65,10 +76,21 @@ function createSelectFromTable(tableId) {
     // Append the option to the select element
     select.appendChild(option);
   }
+	
+  // Create a checkbox
+  var checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.id = "showonlycontaining";
+  checkbox.value = 0; // Set the value to 1 when checked
+  checkbox.onclick = function () {
+    checkbox.value = checkbox.checked ? 1 : 0; // Update the value based on checked state
+	searchTable(fieldSelector.value, showonlycontaining.value);
+  };
 
   // Append the input field and select element to the container
   container.appendChild(input);
   container.appendChild(select);
+  container.appendChild(checkbox);
 }
 
 // Call the function with the table ID
