@@ -30,6 +30,7 @@ $config = array(
     
     // Set to 1 to enable DNSBL lookups
     'dnsbl' => 0,
+    'peers_per_page' => 20,
     // Refresh DNSBL database entries if older than (x) seconds (604800 if not defined)
     // 'dnsbl_interval' => 604800
     

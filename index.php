@@ -19,6 +19,11 @@ require_once 'const.inc.php';
 
 // Initialize current node from the query string
 $currentNodeIndex = isset($_GET['node']) ? (int)$_GET['node'] - 1 : 0;
+
+if (isset($_GET['nopagination'])) {
+    $config['peers_per_page'] = 1000;    
+}
+
 if ($currentNodeIndex < 0 || $currentNodeIndex >= count($config['nodes'])) {
     $currentNodeIndex = 0; // Default to the first node if the input is invalid
 }
@@ -150,7 +155,6 @@ if (
              "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
     }
     ?>
-
     <h3>Connected nodes</h3>
     <div id="select-container"></div>
     <table id="datatable">
@@ -179,7 +183,25 @@ if (
         </thead>
         <tbody>
         <?php
-        foreach ($peerInfo as $peer) {
+        // Define the number of items per page
+        $itemsPerPage = $config['peers_per_page'];
+
+        // Determine the total number of peers
+        $totalPeers = count($peerInfo);
+
+        // Calculate the total number of pages
+        $totalPages = ceil($totalPeers / $itemsPerPage);
+
+        // Get the current page number from the query string, default to 1 if not present
+        $currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+
+        // Calculate the index of the first item on the current page
+        $startIndex = ($currentPage - 1) * $itemsPerPage;
+
+        // Slice the peerInfo array to get only the items for the current page
+        $pagePeers = array_slice($peerInfo, $startIndex, $itemsPerPage);
+        
+        foreach ($pagePeers as $peer) {
             
             if ($peer['inbound'] == true) {
                 $direction = "inbound";
@@ -257,6 +279,26 @@ if (
     <p>&nbsp;</p>
 </main>
 <footer>
+    <?php
+    // Construct the base URL without the 'page' parameter
+    $queryParams = $_GET;
+    unset($queryParams['page']); // Remove 'page' parameter if exists
+    $baseUrl = $_SERVER['PHP_SELF'] . '?' . http_build_query($queryParams);
+    $separator = count($queryParams) > 0 ? '&' : '';
+    if ($totalPages > 1) {
+        echo "<p>Page: ";
+        // Display pagination links
+        for ($i = 1; $i <= $totalPages; $i++) {
+            $link = $baseUrl . $separator . "page=$i";
+            if ($i == $currentPage) {
+                echo "<strong>$i</strong> ";
+            } else {
+                echo "<a href='$link'>$i</a> ";
+            }
+        }
+        echo "</p>";
+    }
+    ?>
     <nav>
         <p>
             <?php
