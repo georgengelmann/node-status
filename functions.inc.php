@@ -7,14 +7,22 @@
  * @return string Formatted size with appropriate suffix (e.g., KB, MB)
  */
 function formatBytes($size, $precision = 2) {
-    if ($size <= 0) {
-        return '0 B';
+    if ($size < 0) {
+        return '0 B'; // Handle negative numbers as an error case.
     }
-    $base = log($size, 1024);
-    $suffixes = array('', 'KB', 'MB', 'GB', 'TB');
-    $sizeFormatted = round(pow(1024, $base - floor($base)), $precision);
-    $suffix = $suffixes[floor($base)];
-    return $sizeFormatted . ' ' . $suffix;
+    if ($size == 0) {
+        return '0 B'; // Explicitly handle the case where size is 0.
+    }
+
+    $units = array('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
+    $index = 0;
+
+    while ($size >= 1024 && $index < count($units) - 1) {
+        $size /= 1024;
+        $index++;
+    }
+
+    return round($size, $precision) . ' ' . $units[$index];
 }
 
 /**
@@ -342,5 +350,388 @@ function establishDatabaseConnection($dbname, $dbuser, $dbpass, $dbhost, $dbport
 
     // Return the MySQLi database object
     return $db;
+}
+
+/**
+ * Processes and retrieves peer information from a Bitcoin node based on query parameters.
+ * This function decides which type of peer information to fetch based on the presence
+ * of specific GET parameters like 'listbanned' or 'fulcrum'.
+ *
+ * Global Variables:
+ *  - $bitcoin (Bitcoin): The Bitcoin client connection object used to fetch peer data.
+ *
+ * Query Parameters:
+ *  - listbanned (bool): If present, fetches information about banned peers.
+ *
+ * Return:
+ *  - array: Returns an array of peer information. Each entry is an associative array containing details
+ *           about a peer such as IP address, connection time, version, bytes sent/received, etc.
+ *           The structure of peer data might vary based on the query parameter used.
+ *
+ * Exceptions:
+ *  - Catches any exceptions thrown during the retrieval or processing of peer data and logs the error.
+ */
+function processPeerInfo() {
+    global $bitcoin;
+    $peerInfo = [];
+
+    try {
+        if (!isset($_GET['listbanned'])) {
+            $peerInfo = $bitcoin->getpeerinfo();
+        } elseif (isset($_GET['listbanned'])) {
+            $bannedNodes = $bitcoin->listbanned();
+            foreach ($bannedNodes as $node) {
+                list($ip, $subnet) = explode('/', $node['address']);
+                $peerInfo[] = array(
+                    "inbound" => true,
+                    "addr" => $ip . ":8333",
+                    "subver" => $node['ban_reason'],
+                    "conntime" => $node['ban_created'],
+                    "startingheight" => 0,
+                    "bytessent" => 0,
+                    "bytesrecv" => 0,
+                    "pingtime" => 0
+                );
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Error processing peer information: " . $e->getMessage());
+    }
+    
+    return $peerInfo;
+}
+
+/**
+ * Provides a default set of peer information. This function is typically called when there is an
+ * issue fetching the actual peer information from the Bitcoin node, serving as a fallback.
+ *
+ * Return:
+ *  - array: Returns a static array containing a single entry of default peer data. This includes
+ *           predefined values for connection details such as IP address, server version, and
+ *           connection times. The values are placeholders indicating a failed connection attempt.
+ *
+ * Usage:
+ *  - This function is used in error handling scenarios within the `processPeerInfo()` function
+ *    to ensure that the system has some data to work with, even if it's indicative of a failure.
+ */
+function getDefaultPeerInfo() {
+    // Provides a default, static set of peer information when the actual data can't be fetched
+    return [
+        [
+            'inbound' => true,
+            'addr' => '127.0.0.1:8333',
+            'subver' => '/Failed to connect to your Bitcoin node/',
+            'conntime' => 0,
+            'startingheight' => 0,
+            'bytessent' => 0,
+            'bytesrecv' => 0,
+            'pingtime' => 0
+        ]
+    ];
+}
+
+/**
+ * Displays detailed information about Bitcoin node peers. It paginates peer data based on configuration settings,
+ * performs lookups for additional information such as abuse reports, OTX pulses, and DNSBL status, and generates
+ * an HTML table displaying this information.
+ *
+ * Globals:
+ *  - $config (array): Configuration array containing settings like peers per page, API keys, and intervals.
+ *  - $peerInfo (array): Array of peer data fetched from a Bitcoin node.
+ *  - $db (mysqli object): Database connection used for storing and retrieving IP checks.
+ *  - $emoji_flags (array): Array mapping country codes to emoji flags.
+ *  - $totalPages (int): Total number of pagination pages, calculated based on peer count and items per page.
+ *  - $currentPage (int): Current page number, determined from $_GET['page'].
+ *
+ * The function handles pagination, IP checks, and formats the output as an HTML table with comprehensive peer data.
+ */
+function displayNodeInformation() {
+        global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
+         // Define the number of items per page
+        $itemsPerPage = $config['peers_per_page'];
+
+        // Determine the total number of peers
+        $totalPeers = count($peerInfo);
+
+        // Calculate the total number of pages
+        $totalPages = ceil($totalPeers / $itemsPerPage);
+
+        // Get the current page number from the query string, default to 1 if not present
+        $currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+
+        // Calculate the index of the first item on the current page
+        $startIndex = ($currentPage - 1) * $itemsPerPage;
+
+        // Slice the peerInfo array to get only the items for the current page
+        $pagePeers = array_slice($peerInfo, $startIndex, $itemsPerPage);
+        
+        foreach ($pagePeers as $peer) {
+            
+            if ($peer['inbound'] == true) {
+                $direction = "inbound";
+            } else {
+                $direction = "outbound";
+            }
+
+            if (getIPv6($peer['addr']) != "") {
+                $peer_host = gethostbyaddr(getIPv6($peer['addr']));
+                $current_ip = $peer_host;
+            } else {
+                $peer_host = explode(":", $peer['addr']);
+                $current_ip = $peer_host[0];
+                $peer_host = gethostbyaddr($peer_host[0]);
+            }
+            
+            if (isset($config['abuseipdb_apikey'])) {
+                if (isset($config['abuseipdb_interval'])) {
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table'], $config['abuseipdb_interval']);
+                } else {
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table']);
+                }
+            }
+            
+            if (isset($config['otx_apikey'])) {
+                if (isset($config['otx_interval'])) {
+                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table'], $config['otx_interval']);
+                } else {
+                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table']);
+                }
+
+            }
+                
+            if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
+                if (isset($config['dnsbl_interval'])) {
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table'], $config['dnsbl_interval']);
+                } else {
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table']);
+                }
+            }
+                
+            $conntime = strtotime("now") - $peer['conntime'];
+            
+            echo "    <tr>\n    ";
+            
+            if (isset($config['abuseipdb_apikey'])) {
+                
+                if (!isset($abuseipdb['countryCode']) || !array_key_exists($abuseipdb['countryCode'], $emoji_flags)) {
+                    $flag = $emoji_flags['WW'];    
+                    $country = 'World';
+                } else {
+                    $flag = $emoji_flags[$abuseipdb['countryCode']];
+                    $country = $abuseipdb['countryCode'];
+                }
+                
+                echo "<td data-label=\"Country\" ondoubleclick=\"sortTable(0)\">" . $country . "&nbsp;" 
+                     . $flag;
+                if (isset($abuseipdb['isTor']) && $abuseipdb['isTor'] === true) {
+                    echo "&nbsp;Tor &#x1F9C5;";
+                }
+                
+                if (isset($abuseipdb["abuseConfidenceScore"])) {
+                    $confidencescore = $abuseipdb["abuseConfidenceScore"];    
+                } else {
+                    $confidencescore = 0;
+                }
+                
+                if (isset($abuseipdb['usageType'])) {
+                    $usagetype = $abuseipdb['usageType'];
+                } else {
+                    $usagetype = 0;
+                }
+                
+                if (isset($abuseipdb['isp'])) {
+                    $isp = $abuseipdb['isp'];    
+                } else {
+                    $isp = 0;
+                }
+                
+                echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
+                     . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $confidencescore .
+                     "</a>&nbsp;</td><td data-label=\"Usage type\">" . $usagetype .
+                     "&nbsp;</td><td data-label=\"ISP\">" . $isp . "&nbsp;</td>";
+            }
+            
+            if (isset($config['otx_apikey'])) {
+                if (!isset($otx['asn'])) {
+                    $otx['asn'] = "Unknown";
+                }
+                if (isset($otx['pulse_info']['count']) && $otx['pulse_info']['count'] > 0) {
+                    echo "<td data-label=\"OTX Pulses\"><a href=\"https://otx.alienvault.com/indicator/ip/". $current_ip
+                        . "\" title=\"Alienvault OTX" . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
+                        . "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+                } else {
+                    echo "<td data-label=\"OTX Pulses\">0&nbsp;</td>" .
+                     "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+                }
+            }
+
+
+            if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
+                echo "<td data-label=\"DNSBL\">" . $dnsbl . "&nbsp;</td>";
+            }
+
+            echo "<td data-label=\"Host\">" . $peer_host . "</td>";
+            
+            if (getIPv6($peer['addr']) != "") {
+                echo "<td data-label=\"IP:Port\">" . $peer['addr'] . "&nbsp;</td>"; 
+            } else {
+                echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
+                    . $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
+            }
+            
+            if (!isset($peer['banscore'])) {
+                $peer['banscore'] = 0;
+            }
+            
+            echo "<td data-label=\"Version\">" . htmlentities($peer['subver']) .
+                "&nbsp;</td><td data-label=\"Direction\">" . $direction .
+                "&nbsp;</td><td data-label=\"Connection time\">" . secondsToTime($conntime) .
+                "&nbsp;</td><td data-label=\"Block height\">" . $peer['startingheight'] .
+                "&nbsp;</td><td data-label=\"Bytes (sent)\">" . formatBytes($peer['bytessent']) .
+                "&nbsp;</td><td data-label=\"Bytes (received)\">" . formatBytes($peer['bytesrecv']) .
+                "&nbsp;</td><td data-label=\"Ban score\">" . $peer['banscore'] .
+                "&nbsp;</td><td data-label=\"Ping\">" . $peer['pingtime'] .
+                "&nbsp;</td>\n    </tr>\n";
+        }
+}
+
+/**
+ * Displays pagination links based on the total number of pages and the current page.
+ * Handles the creation of URLs by maintaining existing GET parameters, excluding the 'page' parameter.
+ *
+ * Globals:
+ *  - $totalPages (int): Total number of pages.
+ *  - $currentPage (int): Currently active page.
+ *
+ * Output:
+ *  - Echoes pagination links as HTML, highlighting the current page.
+ */
+function displayPagination() {
+    // Construct the base URL without the 'page' parameter
+    global $totalPages, $currentPage;
+    $queryParams = $_GET;
+    unset($queryParams['page']); // Remove 'page' parameter if exists
+    $baseUrl = $_SERVER['PHP_SELF'] . '?' . http_build_query($queryParams);
+    $separator = count($queryParams) > 0 ? '&' : '';
+    if ($totalPages > 1) {
+        echo "<p>Page: ";
+        // Display pagination links
+        for ($i = 1; $i <= $totalPages; $i++) {
+            $link = $baseUrl . $separator . "page=$i";
+            if ($i == $currentPage) {
+                echo "<strong>$i</strong> ";
+            } else {
+                echo "<a href='$link'>$i</a> ";
+            }
+        }
+        echo "</p>";
+    }
+}
+
+/**
+ * Displays hyperlinks for switching between Bitcoin nodes based on the configuration in the global `$config` array.
+ * Each link allows the user to select a node by passing its index via the `node` GET parameter.
+ *
+ * Globals:
+ *  - $config (array): Requires 'nodes' array with each node's 'name' and a 'page_title' for link titles.
+ *
+ * Output:
+ *  - Echoes HTML links to the browser, allowing node selection.
+ */
+function displayNodeSwitcher() {
+    global $config;
+    $i = 1;
+    foreach ($config['nodes'] as $nodes) {
+        echo "        <a href=\"?node=" . $i . '" title="' . $config['page_title'] . " (" . $nodes['name'] . ")\">"
+           . $nodes['name'] . "</a>&nbsp;\n";
+             $i++;
+    }    
+}
+
+/**
+ * Initializes the application by setting up the Bitcoin node connection and the database connection.
+ * It configures the application based on URL parameters and handles node selection.
+ * 
+ * Globals:
+ *  - $config (array): Configuration array that should include database and node credentials.
+ * 
+ * URL Parameters:
+ *  - node (int): Optional. Specifies the node index to connect to. Defaults to the first node if unspecified or invalid.
+ *  - nopagination (bool): Optional. If set, adjusts the peers_per_page setting to 1000 for the session.
+ *  - listbanned (bool): Optional. If set, retrieves a list of banned peers instead of regular peer info.
+ *  - fulcrum (bool): Optional. If set, retrieves peer info from a specific fulcrum instance.
+ * 
+ * Outputs:
+ *  - Returns an associative array containing:
+ *    - db (mysqli|null): The database connection object or null if the connection fails.
+ *    - bitcoin (Bitcoin|null): The Bitcoin connection object or null if the connection fails.
+ *    - uptime (int): The uptime of the Bitcoin server, or 0 if the connection fails.
+ *    - networkInfo (array): Network statistics from the Bitcoin server or default values if the connection fails.
+ *    - blockchainInfo (array): Blockchain information from the Bitcoin server or default values if the connection fails.
+ *    - peerInfo (array): Information about peers from the Bitcoin server or default values if special conditions or connection fails.
+ *
+ * Exceptions:
+ *  - Catches and logs any exceptions related to Bitcoin or database connection failures, providing fallback values for all outputs.
+ *
+ * Example usage:
+ *  $initResult = initialize();
+ *  $dbConnection = $initResult['db'];
+ *  $bitcoinData = $initResult['bitcoin'];
+ */
+function initialize() {
+    global $config, $bitcoin, $currentNodeIndex;
+    // Initialize current node from the query string
+    $currentNodeIndex = isset($_GET['node']) ? (int)$_GET['node'] - 1 : 1;
+
+    if (isset($_GET['nopagination'])) {
+        $config['peers_per_page'] = 1000;    
+    }
+
+    if ($currentNodeIndex < 0 || $currentNodeIndex >= count($config['nodes'])) {
+        $currentNodeIndex = 0; // Default to the first node if the input is invalid
+    }
+
+    $bitcoin = null;
+    $uptime = 0;
+    $networkInfo = $blockchainInfo = $peerInfo = [];
+
+    try {
+        $bitcoin = new Bitcoin(
+            $config['nodes'][$currentNodeIndex]['user'],
+            $config['nodes'][$currentNodeIndex]['pass'],
+            $config['nodes'][$currentNodeIndex]['ip'],
+            $config['nodes'][$currentNodeIndex]['port']
+        );
+
+        $uptime = $bitcoin->uptime();
+        $networkInfo = $bitcoin->getnettotals();
+        $blockchainInfo = $bitcoin->getblockchaininfo();
+        $peerInfo = processPeerInfo();
+    } catch (Exception $e) {
+        error_log("Bitcoin connection error: " . $e->getMessage());
+        $peerInfo = getDefaultPeerInfo();
+    }
+
+    $db = null;
+    try {
+        $db = establishDatabaseConnection(
+            $config['db_name'],
+            $config['db_user'],
+            $config['db_pass'],
+            $config['db_host'],
+            $config['db_port']
+        );
+    } catch (Exception $e) {
+        error_log("Database connection error: " . $e->getMessage());
+    }
+
+    return [
+        'db' => $db,
+        'bitcoin' => $bitcoin,
+        'uptime' => $uptime,
+        'networkInfo' => $networkInfo,
+        'blockchainInfo' => $blockchainInfo,
+        'peerInfo' => $peerInfo
+    ];
 }
 ?>

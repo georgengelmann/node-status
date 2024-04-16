@@ -2,6 +2,7 @@
 $emoji_flags = array();
 
 // Now, all the country flags as emojis
+$emoji_flags['WW'] = '&#x1F30D;';
 $emoji_flags['AD'] = "&#x1F1E6;&#x1F1E9;";
 $emoji_flags['AE'] = "&#x1F1E6;&#x1F1EA;";
 $emoji_flags['AF'] = "&#x1F1E6;&#x1F1EB;";
