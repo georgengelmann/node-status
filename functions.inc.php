@@ -6,14 +6,14 @@
  * @param int     $precision Number of decimal places to round to (default: 2)
  * @return string Formatted size with appropriate suffix (e.g., KB, MB)
  */
-function formatBytes($size, $precision = 2)
-{
+function formatBytes($size, $precision = 2) {
+    if ($size <= 0) {
+        return '0 B';
+    }
     $base = log($size, 1024);
-    $suffixes = array('', 'K', 'M', 'G', 'T');
-
+    $suffixes = array('', 'KB', 'MB', 'GB', 'TB');
     $sizeFormatted = round(pow(1024, $base - floor($base)), $precision);
     $suffix = $suffixes[floor($base)];
-
     return $sizeFormatted . ' ' . $suffix;
 }
 
