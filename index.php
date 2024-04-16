@@ -74,8 +74,8 @@ $peerInfo = $init['peerInfo'];
                 echo "<th>Country</th>\n<th>Abuse score</th>\n<th>Usage type</th>\n<th>ISP</th>";
             }
             if (isset($config['otx_apikey'])) {
-				echo "<th>OTX Pulses</th><th>ASN</th>";
-			}
+                echo "<th>OTX Pulses</th><th>ASN</th>";
+            }
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 echo "<th>DNSBL</th>\n";
             }
@@ -94,8 +94,8 @@ $peerInfo = $init['peerInfo'];
         </thead>
         <tbody>
         <?php
-		$totalPages = null;
-		$currentPage = null;
+        $totalPages = null;
+        $currentPage = null;
         displayNodeInformation();
         ?>
         </tbody>
@@ -103,9 +103,9 @@ $peerInfo = $init['peerInfo'];
     <p>&nbsp;</p>
 </main>
 <footer>
-	<?php
+    <?php
     displayPagination();
-	?>
+    ?>
     <nav>
         <p>
             <?php
@@ -113,7 +113,7 @@ $peerInfo = $init['peerInfo'];
             ?>
         </p>
     </nav>
-    <p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2023 Georg Engelmann</p>
+    <p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2024 Georg Engelmann</p>
     <script src="script/main.js"></script>
 </footer>
 </body>
