@@ -13,6 +13,13 @@ $config = array(
     //
     // Refresh AbuseIPDB database entries if older than (x) seconds (604800 if not defined)
     // 'abuseipdb_interval' => 604800,
+
+    // Alienvault OTX Key
+    // Generate an API key for free: https://otx.alienvault.com/api
+    //
+    // 'otx_apikey' => ''
+    // Refresh OTX database entries if older than (x) seconds (604800 if not defined)
+    // 'otx_interval' => 604800,
         
     // Database config
     //

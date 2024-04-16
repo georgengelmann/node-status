@@ -187,7 +187,7 @@ function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null, $updateInterval
         $api_result = curl_exec($client);
         curl_close($client);
         $api_res = json_decode($api_result, true);
-
+       
         if ($api_res["data"]) {
             // If a database connection and table name are provided, store the API result and timestamp
             if ($db !== null && $table !== null) {
@@ -216,6 +216,106 @@ function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null, $updateInterval
         return 0;
     }
 }
+
+/**
+ * Queries OTX API for IP reputation data.
+ *
+ * @param string $ip The IP address to query.
+ * @param string $apiKey The API key for OTX API authentication.
+ * @return array Parsed JSON data from the OTX API or null on failure.
+ * @throws Exception If there are cURL errors or the API returns a non-200 status code.
+ */
+function queryOTX($ip, $apiKey) {
+    // Endpoint for IP reputation
+    $url = "https://otx.alienvault.com/api/v1/indicators/IPv4/$ip/general";
+
+    // cURL setup
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    // Set the API key in the header
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array("X-OTX-API-KEY: $apiKey"));
+
+    // Execute the cURL session
+    $response = curl_exec($ch);
+    $err = curl_error($ch);
+
+    // Close cURL session
+    curl_close($ch);
+
+    // Error handling
+    if ($err) {
+        echo "cURL Error #:" . $err;
+        return json_encode([]);
+    } else {
+        return $response;
+    }
+}
+
+/**
+ * Queries OTX AlienVault for IP reputation data and manages data caching in a MySQL database.
+ *
+ * @param string $ip The IP address to be checked for threat data. The function validates that this is a properly formatted IP address.
+ * @param string $apiKey The API key for authenticating requests to the OTX AlienVault API.
+ * @param mysqli $db The MySQL database connection object. This must be a valid mysqli connection resource that is already open.
+ * @param string $table The name of the database table where IP data is stored and retrieved. This table must exist and be structured to hold the required data.
+ * @param int $updateInterval The time interval in seconds to determine when the data for an IP address should be refreshed from the OTX API. The default is set to 604800 seconds (7 days).
+ *
+ * The function checks if the IP data is already stored in the database and whether it is still considered up-to-date according to the updateInterval.
+ * If the data is up-to-date, it is retrieved from the database and returned.
+ * If the data is not up-to-date or not present, a new API request is made to OTX AlienVault, the result is stored in the database, and the new data is returned.
+ * This approach reduces unnecessary API requests by caching data and only updating it when it is beyond the updateInterval.
+ * Prepared statements are used for database operations to enhance security and prevent SQL injection attacks.
+ *
+ * @return array The threat data for the IP as an associative array, or an empty array if no data is available or the IP is invalid.
+ */
+function OTXIPCheck($ip, $apiKey, $db, $table, $updateInterval = 604800) {
+    if (filter_var($ip, FILTER_VALIDATE_IP)) { // Validate IP address format
+        if ($db !== null && $table !== null) {
+            // Check if the IP data is already in the database and if the timestamp is not expired
+            $escaped_ip = mysqli_real_escape_string($db, $ip); // Escape the IP to prevent SQL injection
+            $query = "SELECT * FROM $table WHERE ip_address = '$escaped_ip'";
+            $result = mysqli_query($db, $query);
+
+            if ($result && mysqli_num_rows($result) > 0) {
+                $row = mysqli_fetch_assoc($result);
+                $timestamp = strtotime($row['otx_timestamp']);
+                $currentTimestamp = time();
+                // If the timestamp is still within the update interval, return the stored result
+                if (($currentTimestamp - $timestamp) <= $updateInterval) {
+                    return json_decode($row['otx_data'], true);
+                }
+            }
+
+            // IP data is not in the database or the timestamp is expired, make the OTX API request
+            $response = queryOTX($ip, $apiKey);
+            $otxData = json_decode($response, true);
+
+            if (!empty($otxData)) {
+                // If a database connection and table name are provided, store the API result and timestamp
+                $otx_json = mysqli_real_escape_string($db, json_encode($otxData));
+                $timestamp = date('Y-m-d H:i:s');
+                // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
+                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES ('$escaped_ip', '$otx_json', '$timestamp') 
+                                 ON DUPLICATE KEY UPDATE otx_data = '$otx_json', otx_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+                return $otxData;
+            } else {
+                // If no data is returned from the API, update the database entry with an empty otx_data and timestamp
+                $otx_json = mysqli_real_escape_string($db, json_encode([]));
+                $timestamp = date('Y-m-d H:i:s');
+                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES ('$escaped_ip', '$otx_json', '$timestamp') 
+                                 ON DUPLICATE KEY UPDATE otx_data = '$otx_json', otx_timestamp = '$timestamp'";
+                mysqli_query($db, $update_query);
+                return [];
+            }
+        }
+    } else {
+        return []; // Return an empty array if IP is not valid
+    }
+}
+
 
 /**
  * Establishes a MySQLi database connection and returns the database object.

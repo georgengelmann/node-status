@@ -21,7 +21,7 @@ require_once 'const.inc.php';
 $currentNodeIndex = isset($_GET['node']) ? (int)$_GET['node'] - 1 : 0;
 
 if (isset($_GET['nopagination'])) {
-    $config['peers_per_page'] = 1000;    
+	$config['peers_per_page'] = 1000;	
 }
 
 if ($currentNodeIndex < 0 || $currentNodeIndex >= count($config['nodes'])) {
@@ -41,9 +41,9 @@ try {
     $uptime = $bitcoin->uptime();
     $networkInfo = $bitcoin->getnettotals();
     $blockchainInfo = $bitcoin->getblockchaininfo();
-    if (!isset($_GET['listbanned'])) {
+    if (!isset($_GET['listbanned']) && !isset($_GET['fulcrum'])) {
         $peerInfo = $bitcoin->getpeerinfo();
-    } else {
+    } elseif (isset($_GET['listbanned'])) {
         $peerInfo = array();
         $banned_nodes = $bitcoin->listbanned();
         foreach ($banned_nodes as $banned_node) {
@@ -61,7 +61,27 @@ try {
                 );
             }
         }
-    }
+	} elseif (isset($_GET['fulcrum'])) {
+		$fpeers = file('https://electroncash.de/peers.php?instance=' . $_GET['instance']);
+		foreach ($fpeers as $fpeer) {
+			$peers[] = explode(' ', $fpeer);
+		}
+        $peerInfo = array();
+		foreach ($peers as $peer) {
+				if ($peer[0] !== "" && $peer[0] !== null && $peer[0] !== "IP:PORT") {
+                $peerInfo[] = array(
+                    "inbound" => true,
+                    "addr" => "$peer[0]",
+                    "subver" => $peer[1],
+                    "conntime" => 0,
+                    "startingheight" => 0,
+                    "bytessent" => $peer[3],
+					"bytesrecv" => $peer[2],
+                    "pingtime" => 0
+                );
+            }
+		}
+	}
     
 } catch (Exception $e) {
     // Output the error message from the exception
@@ -165,6 +185,9 @@ if (
             if (isset($config['abuseipdb_apikey'])) {
                 echo "<th>Country</th>\n<th>Abuse score</th>\n<th>Usage type</th>\n<th>ISP</th>";
             }
+            if (isset($config['otx_apikey'])) {
+				echo "<th>OTX Pulses</th><th>ASN</th>";
+			}
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 echo "<th>DNSBL</th>\n";
             }
@@ -225,6 +248,15 @@ if (
                     $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table']);
                 }
             }
+			
+			if (isset($config['otx_apikey'])) {
+				if (isset($config['otx_interval'])) {
+					$otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table'], $config['otx_interval']);
+				} else {
+					$otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table']);
+				}
+
+			}
                 
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 if (isset($config['dnsbl_interval'])) {
@@ -249,6 +281,18 @@ if (
                      "</a>&nbsp;</td><td data-label=\"Usage type\">" . $abuseipdb['usageType'] .
                      "&nbsp;</td><td data-label=\"ISP\">" . $abuseipdb['isp'] . "&nbsp;</td>";
             }
+			
+			if (isset($config['otx_apikey'])) {
+				if ($otx['pulse_info']['count'] > 0) {
+					echo "<td data-label=\"OTX Pulses\"><a href=\"https://otx.alienvault.com/indicator/ip/". $current_ip
+						. "\" title=\"Alienvault OTX" . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
+						. "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+				} else {
+					echo "<td data-label=\"OTX Pulses\">0</td>" .
+					 "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+				}
+			}
+
 
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 echo "<td data-label=\"DNSBL\">" . $dnsbl . "&nbsp;</td>";
@@ -279,26 +323,26 @@ if (
     <p>&nbsp;</p>
 </main>
 <footer>
-    <?php
+	<?php
     // Construct the base URL without the 'page' parameter
     $queryParams = $_GET;
     unset($queryParams['page']); // Remove 'page' parameter if exists
     $baseUrl = $_SERVER['PHP_SELF'] . '?' . http_build_query($queryParams);
     $separator = count($queryParams) > 0 ? '&' : '';
-    if ($totalPages > 1) {
-        echo "<p>Page: ";
-        // Display pagination links
-        for ($i = 1; $i <= $totalPages; $i++) {
-            $link = $baseUrl . $separator . "page=$i";
-            if ($i == $currentPage) {
-                echo "<strong>$i</strong> ";
-            } else {
-                echo "<a href='$link'>$i</a> ";
-            }
-        }
-        echo "</p>";
-    }
-    ?>
+	if ($totalPages > 1) {
+		echo "<p>Page: ";
+		// Display pagination links
+		for ($i = 1; $i <= $totalPages; $i++) {
+			$link = $baseUrl . $separator . "page=$i";
+			if ($i == $currentPage) {
+				echo "<strong>$i</strong> ";
+			} else {
+				echo "<a href='$link'>$i</a> ";
+			}
+		}
+		echo "</p>";
+	}
+	?>
     <nav>
         <p>
             <?php
