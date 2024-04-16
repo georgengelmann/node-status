@@ -288,7 +288,7 @@ if (
 						. "\" title=\"Alienvault OTX" . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
 						. "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
 				} else {
-					echo "<td data-label=\"OTX Pulses\">0</td>" .
+					echo "<td data-label=\"OTX Pulses\">0&nbsp;</td>" .
 					 "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
 				}
 			}
