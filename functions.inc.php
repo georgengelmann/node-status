@@ -775,13 +775,19 @@ function initialize() {
 
     $db = null;
     try {
-        $db = establishDatabaseConnection(
-            $config['db_name'],
+        if (isset($config['db_name'],
             $config['db_user'],
             $config['db_pass'],
             $config['db_host'],
-            $config['db_port']
-        );
+            $config['db_port'])) {
+            $db = establishDatabaseConnection(
+                $config['db_name'],
+                $config['db_user'],
+                $config['db_pass'],
+                $config['db_host'],
+                $config['db_port']
+            );
+		}
     } catch (Exception $e) {
         error_log("Database connection error: " . $e->getMessage());
         $peerInfo = getDefaultPeerInfo();
