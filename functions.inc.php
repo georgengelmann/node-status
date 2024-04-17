@@ -324,7 +324,6 @@ function OTXIPCheck($ip, $apiKey, $db, $table, $updateInterval = 604800) {
     }
 }
 
-
 /**
  * Establishes a MySQLi database connection and returns the database object.
  *
@@ -355,7 +354,6 @@ function establishDatabaseConnection($dbname, $dbuser, $dbpass, $dbhost, $dbport
 /**
  * Processes and retrieves peer information from a Bitcoin node based on query parameters.
  * This function decides which type of peer information to fetch based on the presence
- * of specific GET parameters like 'listbanned' or 'fulcrum'.
  *
  * Global Variables:
  *  - $bitcoin (Bitcoin): The Bitcoin client connection object used to fetch peer data.
@@ -447,7 +445,7 @@ function getDefaultPeerInfo() {
  */
 function displayNodeInformation() {
         global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
-         // Define the number of items per page
+        // Define the number of items per page
         $itemsPerPage = $config['peers_per_page'];
 
         // Determine the total number of peers
@@ -475,11 +473,15 @@ function displayNodeInformation() {
 
             if (getIPv6($peer['addr']) != "") {
                 $peer_host = gethostbyaddr(getIPv6($peer['addr']));
-                $current_ip = $peer_host;
+                $current_ip = getIPv6($peer['addr']);
             } else {
                 $peer_host = explode(":", $peer['addr']);
                 $current_ip = $peer_host[0];
-                $peer_host = gethostbyaddr($peer_host[0]);
+                if (filter_var($peer_host[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                    $peer_host = gethostbyaddr($peer_host[0]);
+                } else {
+                    $peer_host = "&nbsp;";
+                }
             }
             
             if (isset($config['abuseipdb_apikey'])) {
@@ -498,7 +500,7 @@ function displayNodeInformation() {
                 }
 
             }
-                
+
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 if (isset($config['dnsbl_interval'])) {
                     $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table'], $config['dnsbl_interval']);
@@ -512,7 +514,6 @@ function displayNodeInformation() {
             echo "    <tr>\n    ";
             
             if (isset($config['abuseipdb_apikey'])) {
-                
                 if (!isset($abuseipdb['countryCode']) || !array_key_exists($abuseipdb['countryCode'], $emoji_flags)) {
                     $flag = $emoji_flags['WW'];    
                     $country = 'World';
@@ -520,31 +521,26 @@ function displayNodeInformation() {
                     $flag = $emoji_flags[$abuseipdb['countryCode']];
                     $country = $abuseipdb['countryCode'];
                 }
-                
                 echo "<td data-label=\"Country\">" . $country . "&nbsp;" 
                      . $flag;
                 if (isset($abuseipdb['isTor']) && $abuseipdb['isTor'] === true) {
                     echo "&nbsp;Tor &#x1F9C5;";
                 }
-                
                 if (isset($abuseipdb["abuseConfidenceScore"])) {
                     $confidencescore = $abuseipdb["abuseConfidenceScore"];    
                 } else {
                     $confidencescore = 0;
                 }
-                
                 if (isset($abuseipdb['usageType'])) {
                     $usagetype = $abuseipdb['usageType'];
                 } else {
                     $usagetype = 0;
                 }
-                
                 if (isset($abuseipdb['isp'])) {
                     $isp = $abuseipdb['isp'];    
                 } else {
                     $isp = 0;
                 }
-                
                 echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
                      . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $confidencescore .
                      "</a>&nbsp;</td><td data-label=\"Usage type\">" . $usagetype .
@@ -572,13 +568,9 @@ function displayNodeInformation() {
 
             echo "<td data-label=\"Host\">" . $peer_host . "</td>";
             
-            if (getIPv6($peer['addr']) != "") {
-                echo "<td data-label=\"IP:Port\">" . $peer['addr'] . "&nbsp;</td>"; 
-            } else {
-                echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
-                    . $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
-            }
-            
+            echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
+               . $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
+                        
             if (!isset($peer['banscore'])) {
                 $peer['banscore'] = 0;
             }
