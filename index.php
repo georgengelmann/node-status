@@ -48,19 +48,23 @@ $peerInfo = $init['peerInfo'];
 
     <h3>Network</h3>
     <?php
-    echo "<p>Received: " . formatBytes($networkInfo['totalbytesrecv']) . "<br>";
-    echo "Sent: " . formatBytes($networkInfo['totalbytessent']) . "<p>";
+    if ($networkInfo) {
+        echo "<p>Received: " . formatBytes($networkInfo['totalbytesrecv']) . "<br>";
+        echo "Sent: " . formatBytes($networkInfo['totalbytessent']) . "<p>";
+    }
     ?>
 
     <h3>Blockchain</h3>
     <?php
-    if ($blockchainInfo["size_on_disk"]) {
-        echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
-            "Difficulty: " . $blockchainInfo['difficulty'] . "<br>" .
-            "Size: " . formatBytes($blockchainInfo['size_on_disk'], 2) . "</p>";
-    } else {
-        echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
-             "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
+    if ($blockchainInfo) {
+        if ($blockchainInfo['size_on_disk']) {
+            echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
+                "Difficulty: " . $blockchainInfo['difficulty'] . "<br>" .
+                "Size: " . formatBytes($blockchainInfo['size_on_disk'], 2) . "</p>";
+        } else {
+            echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
+                 "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
+        }
     }
     ?>
     <h3>Connected nodes</h3>

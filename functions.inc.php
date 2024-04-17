@@ -433,6 +433,9 @@ function processPeerInfo() {
                 );
             }
         }
+        if ($peerInfo == '' || is_null($peerInfo)) {
+           $peerInfo = getDefaultPeerInfo();
+        }
     } catch (Exception $e) {
         error_log("Error processing peer information: " . $e->getMessage());
     }
@@ -487,7 +490,11 @@ function getDefaultPeerInfo() {
 function displayNodeInformation() {
         global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
         // Define the number of items per page
-        $itemsPerPage = $config['peers_per_page'];
+        if (isset($config['peers_per_page'])) {
+            $itemsPerPage = $config['peers_per_page'];
+		} else {
+			$itemsPerPage = 25;
+		}
 
         // Determine the total number of peers
         $totalPeers = count($peerInfo);
@@ -732,12 +739,23 @@ function initialize() {
         );
 
         $uptime = $bitcoin->uptime();
+		if ($uptime === null) {
+			$uptime = 0;
+		}
         $networkInfo = $bitcoin->getnettotals();
-        $blockchainInfo = $bitcoin->getblockchaininfo();
-        $peerInfo = processPeerInfo();
+		if ($networkInfo === null) {
+        	$networkInfo = 0;
+		}
+		$blockchainInfo = $bitcoin->getblockchaininfo();
+		if ($blockchainInfo === null) {
+			$blockchainInfo = 0;	
+		}
     } catch (Exception $e) {
         error_log("Bitcoin connection error: " . $e->getMessage());
-        $peerInfo = getDefaultPeerInfo();
+		$uptime = 0;
+		$networkInfo = 0;
+		$peerInfo = 0;
+        $peerInfo = getDefaultPeerInfo()
     }
 
     $db = null;
