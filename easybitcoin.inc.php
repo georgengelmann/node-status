@@ -58,7 +58,7 @@ class Bitcoin
      * @return mixed
      * @throws \Exception
      */
-    public function request($method, $params = [])
+    public function __call($method, $params = [])
     {
         $this->status = null;
         $this->error = null;
