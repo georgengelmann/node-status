@@ -432,9 +432,9 @@ function processPeerInfo() {
                     "pingtime" => 0
                 );
             }
-        }
+        } 
         if ($peerInfo == '' || is_null($peerInfo)) {
-           $peerInfo = getDefaultPeerInfo();
+            $peerInfo = getDefaultPeerInfo();
         }
     } catch (Exception $e) {
         error_log("Error processing peer information: " . $e->getMessage());
@@ -489,15 +489,21 @@ function getDefaultPeerInfo() {
  */
 function displayNodeInformation() {
         global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
+
         // Define the number of items per page
         if (isset($config['peers_per_page'])) {
             $itemsPerPage = $config['peers_per_page'];
-		} else {
-			$itemsPerPage = 25;
-		}
-
+        } else {
+            $itemsPerPage = 25;
+        }
+    
         // Determine the total number of peers
-        $totalPeers = count($peerInfo);
+        if ($peerInfo != '') {
+            $totalPeers = count($peerInfo);
+        } else {
+            $peerInfo = getDefaultPeerInfo();
+            $totalPeers = 1;    
+        }
 
         // Calculate the total number of pages
         $totalPages = ceil($totalPeers / $itemsPerPage);
@@ -694,7 +700,6 @@ function displayNodeSwitcher() {
  *  - node (int): Optional. Specifies the node index to connect to. Defaults to the first node if unspecified or invalid.
  *  - nopagination (bool): Optional. If set, adjusts the peers_per_page setting to 1000 for the session.
  *  - listbanned (bool): Optional. If set, retrieves a list of banned peers instead of regular peer info.
- *  - fulcrum (bool): Optional. If set, retrieves peer info from a specific fulcrum instance.
  * 
  * Outputs:
  *  - Returns an associative array containing:
@@ -729,7 +734,6 @@ function initialize() {
     $bitcoin = null;
     $uptime = 0;
     $networkInfo = $blockchainInfo = $peerInfo = [];
-
     try {
         $bitcoin = new Bitcoin(
             $config['nodes'][$currentNodeIndex]['user'],
@@ -739,23 +743,24 @@ function initialize() {
         );
 
         $uptime = $bitcoin->uptime();
-		if ($uptime === null) {
-			$uptime = 0;
-		}
+        if ($uptime === null) {
+            $uptime = 0;
+        }
         $networkInfo = $bitcoin->getnettotals();
-		if ($networkInfo === null) {
-        	$networkInfo = 0;
-		}
-		$blockchainInfo = $bitcoin->getblockchaininfo();
-		if ($blockchainInfo === null) {
-			$blockchainInfo = 0;	
-		}
+        if ($networkInfo === null) {
+            $networkInfo = 0;
+        }
+        $blockchainInfo = $bitcoin->getblockchaininfo();
+        if ($blockchainInfo === null) {
+            $blockchainInfo = 0;    
+        }
+        $peerInfo = processPeerInfo();
     } catch (Exception $e) {
         error_log("Bitcoin connection error: " . $e->getMessage());
-		$uptime = 0;
-		$networkInfo = 0;
-		$peerInfo = 0;
-        $peerInfo = getDefaultPeerInfo()
+        $uptime = 0;
+        $networkInfo = 0;
+        $peerInfo = 0;
+        $peerInfo = getDefaultPeerInfo();
     }
 
     $db = null;

@@ -4,6 +4,8 @@ set_time_limit(0);
 
 // Enable error reporting
 error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
 
 // Configuration
 require_once 'config.inc.php';
@@ -56,16 +58,16 @@ $peerInfo = $init['peerInfo'];
 
     <h3>Blockchain</h3>
     <?php
-    if ($blockchainInfo) {
-        if ($blockchainInfo['size_on_disk']) {
-            echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
-                "Difficulty: " . $blockchainInfo['difficulty'] . "<br>" .
-                "Size: " . formatBytes($blockchainInfo['size_on_disk'], 2) . "</p>";
-        } else {
-            echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
-                 "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
-        }
-    }
+	if ($blockchainInfo) {
+		if ($blockchainInfo['size_on_disk']) {
+			echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
+				"Difficulty: " . $blockchainInfo['difficulty'] . "<br>" .
+				"Size: " . formatBytes($blockchainInfo['size_on_disk'], 2) . "</p>";
+		} else {
+			echo "<p>Height: " . $blockchainInfo['blocks'] . "<br>" .
+				 "Difficulty: " . $blockchainInfo['difficulty'] . "<br></p>";
+		}
+	}
     ?>
     <h3>Connected nodes</h3>
     <div id="select-container"></div>
@@ -78,8 +80,8 @@ $peerInfo = $init['peerInfo'];
                 echo "<th>Country</th>\n<th>Abuse score</th>\n<th>Usage type</th>\n<th>ISP</th>";
             }
             if (isset($config['otx_apikey'])) {
-                echo "<th>OTX Pulses</th><th>ASN</th>";
-            }
+				echo "<th>OTX Pulses</th><th>ASN</th>";
+			}
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 echo "<th>DNSBL</th>\n";
             }
@@ -98,8 +100,8 @@ $peerInfo = $init['peerInfo'];
         </thead>
         <tbody>
         <?php
-        $totalPages = null;
-        $currentPage = null;
+		$totalPages = null;
+		$currentPage = null;
         displayNodeInformation();
         ?>
         </tbody>
@@ -107,9 +109,9 @@ $peerInfo = $init['peerInfo'];
     <p>&nbsp;</p>
 </main>
 <footer>
-    <?php
+	<?php
     displayPagination();
-    ?>
+	?>
     <nav>
         <p>
             <?php

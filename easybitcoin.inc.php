@@ -1,3 +1,4 @@
+<?php
 /**
  * EasyBitcoin-PHP
  *
@@ -113,3 +114,4 @@ class Bitcoin
         return $this->response['result'];
     }
 }
+?>
