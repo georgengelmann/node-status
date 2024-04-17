@@ -220,7 +220,11 @@ function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null, $updateInterval
 
             if ($result && mysqli_num_rows($result) > 0) {
                 $row = mysqli_fetch_assoc($result);
-                $timestamp = strtotime($row['abuse_timestamp']);
+                if (!is_null($row['abuse_timestamp'])) {
+                    $timestamp = strtotime($row['abuse_timestamp']);
+                } else {
+                    $timestamp = 0;
+                }
                 $currentTimestamp = time();
                 // If the timestamp is still within the update interval, return the stored result
                 if (($currentTimestamp - $timestamp) <= $updateInterval) {

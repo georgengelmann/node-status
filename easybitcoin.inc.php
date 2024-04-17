@@ -10,6 +10,8 @@
  * Copyright (c) 2023 Georg Engelmann
  */
 
+
+#[\AllowDynamicProperties]
 class Bitcoin
 {
     private $username;
