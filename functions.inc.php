@@ -60,20 +60,6 @@ function secondsToTime($seconds)
 }
 
 /**
- * Extract IPv6 address from a given host string.
- *
- * @param string $host Host string possibly containing an IPv6 address
- * @return string Extracted IPv6 address (empty string if not found)
- */
-function getIPv6($host)
-{
-    $pattern = "/\[(.*?)\]/";
-    preg_match($pattern, $host, $matches);
-
-    return isset($matches[1]) ? $matches[1] : '';
-}
-
-/**
  * Checks if a given string is a valid IP address (IPv4 or IPv6).
  *
  * @param string $ip The IP address to be validated.
@@ -83,6 +69,61 @@ function getIPv6($host)
  */
 function isIP($ip) {
     return filter_var($ip, FILTER_VALIDATE_IP) !== false;
+}
+
+/**
+ * Extracts the IP address from a combined IP:port pair.
+ * It handles different formats including IPv4, bracketed IPv6, and unbracketed IPv6.
+ * 
+ * @param string $ipPortPair The IP address and port pair as a single string.
+ * @return string The extracted IP address without the port.
+ */
+function extractIPAddress($ipPortPair) {
+    // Check for IPv6 format enclosed in brackets
+    if (strpos($ipPortPair, '[') === 0) {
+        // Extract the portion within brackets
+        $endBracketPos = strpos($ipPortPair, ']');
+        $ipv6Address = substr($ipPortPair, 1, $endBracketPos - 1);
+        // Remove any port number from the IPv6 address if there is one after the bracket
+        $portPosAfterBracket = strpos($ipPortPair, ':', $endBracketPos);
+        if ($portPosAfterBracket !== false) {
+            // Port is present, so we do not need to do anything further
+            return $ipv6Address;
+        }
+    } else {
+        // Handle non-bracketed addresses which could be IPv4 or IPv6
+        $lastColonPos = strrpos($ipPortPair, ':');
+        if ($lastColonPos !== false) {
+            // Check how many colons are there to decide if it's IPv6 or IPv4
+            if (substr_count($ipPortPair, ':') > 1) {
+                // It's an IPv6 address without brackets
+                return substr($ipPortPair, 0, $lastColonPos);
+            } else {
+                // It's an IPv4 address; simply remove the port section
+                return substr($ipPortPair, 0, $lastColonPos);
+            }
+        }
+    }
+    // Return as is if no condition matched (unlikely, defensive coding)
+    return $ipPortPair;
+}
+
+/**
+ * Removes the port number from an IPv6 address if it is present.
+ * Assumes that the last colon and subsequent numeric part represent the port.
+ * 
+ * @param string $ipv6Address The IPv6 address potentially including a port number.
+ * @return string The IPv6 address without the port.
+ */
+function removePortFromIPv6($ipv6Address) {
+    // Identify the last colon, which is presumed to precede the port number
+    $lastColonPos = strrpos($ipv6Address, ':');
+    if ($lastColonPos !== false && is_numeric(substr($ipv6Address, $lastColonPos + 1))) {
+        // Strip out the port number by cutting off after the last colon
+        return substr($ipv6Address, 0, $lastColonPos);
+    }
+    // Return the address unmodified if no port number is found
+    return $ipv6Address;
 }
 
 /**
@@ -96,7 +137,7 @@ function isIP($ip) {
  * @return mixed Returns the DNSBL lookup result or a database result if found.
  */
 function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null, $updateInterval = 604800) {
-    if (isIP($ip) && is_array($dnsbl_lookup) && !getIPv6($ip)) {
+    if (isIP($ip) && is_array($dnsbl_lookup) && !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
         // Check if the database connection and table name are provided
         if ($db !== null && $table !== null) {
             // Check if the IP address exists in the database and if the timestamp is not expired
@@ -471,17 +512,12 @@ function displayNodeInformation() {
                 $direction = "outbound";
             }
 
-            if (getIPv6($peer['addr']) != "") {
-                $peer_host = gethostbyaddr(getIPv6($peer['addr']));
-                $current_ip = getIPv6($peer['addr']);
+            $current_ip = extractIPAddress($peer['addr']);
+            
+            if (isIP($current_ip)) {
+                $peer_host = gethostbyaddr($current_ip);
             } else {
-                $peer_host = explode(":", $peer['addr']);
-                $current_ip = $peer_host[0];
-                if (filter_var($peer_host[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-                    $peer_host = gethostbyaddr($peer_host[0]);
-                } else {
-                    $peer_host = "&nbsp;";
-                }
+                $peer_host = $current_ip;    
             }
             
             if (isset($config['abuseipdb_apikey'])) {
@@ -715,6 +751,7 @@ function initialize() {
         );
     } catch (Exception $e) {
         error_log("Database connection error: " . $e->getMessage());
+        $peerInfo = getDefaultPeerInfo();
     }
 
     return [
