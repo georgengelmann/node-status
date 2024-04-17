@@ -521,6 +521,12 @@ function displayNodeInformation() {
         // Slice the peerInfo array to get only the items for the current page
         $pagePeers = array_slice($peerInfo, $startIndex, $itemsPerPage);
         
+        if (isset($config['db_table'])) {
+            $db_table = $config['db_table'];
+        } else {
+            $db_table = null;
+        }
+        
         foreach ($pagePeers as $peer) {
             
             if ($peer['inbound'] == true) {
@@ -539,26 +545,26 @@ function displayNodeInformation() {
             
             if (isset($config['abuseipdb_apikey'])) {
                 if (isset($config['abuseipdb_interval'])) {
-                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table'], $config['abuseipdb_interval']);
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $db_table, $config['abuseipdb_interval']);
                 } else {
-                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table']);
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $db_table);
                 }
             }
             
             if (isset($config['otx_apikey'])) {
                 if (isset($config['otx_interval'])) {
-                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table'], $config['otx_interval']);
+                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $db_table, $config['otx_interval']);
                 } else {
-                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table']);
+                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $db_table);
                 }
 
             }
 
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 if (isset($config['dnsbl_interval'])) {
-                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table'], $config['dnsbl_interval']);
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $db_table, $config['dnsbl_interval']);
                 } else {
-                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table']);
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $db_table);
                 }
             }
                 
