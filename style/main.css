@@ -350,20 +350,20 @@ table th {
     table td:last-child {
         border-bottom: 0;
    }
-}
-header, main, footer {
-    margin: 0 auto;
-    width: 100%;
-    display: inline-block;
-}
-main article{
-    margin: 24px 24px 0;
-    display: block;
-    padding-bottom: 28px;
-    border-bottom: 1px solid rgba(0,0,0,.12);
-}
-footer p {
-    text-align: center
+    header, main, footer {
+        margin: 0 auto;
+        width: 100%;
+        display: inline-block;
+    }
+    main article{
+        margin: 24px 24px 0;
+        display: block;
+        padding-bottom: 28px;
+        border-bottom: 1px solid rgba(0,0,0,.12);
+    }
+    footer p {
+        text-align: center
+    }
 }
 @media print {
     footer {

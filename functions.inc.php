@@ -521,7 +521,7 @@ function displayNodeInformation() {
                     $country = $abuseipdb['countryCode'];
                 }
                 
-                echo "<td data-label=\"Country\" ondoubleclick=\"sortTable(0)\">" . $country . "&nbsp;" 
+                echo "<td data-label=\"Country\">" . $country . "&nbsp;" 
                      . $flag;
                 if (isset($abuseipdb['isTor']) && $abuseipdb['isTor'] === true) {
                     echo "&nbsp;Tor &#x1F9C5;";
@@ -557,7 +557,7 @@ function displayNodeInformation() {
                 }
                 if (isset($otx['pulse_info']['count']) && $otx['pulse_info']['count'] > 0) {
                     echo "<td data-label=\"OTX Pulses\"><a href=\"https://otx.alienvault.com/indicator/ip/". $current_ip
-                        . "\" title=\"Alienvault OTX" . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
+                        . "\" title=\"Alienvault OTX " . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
                         . "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
                 } else {
                     echo "<td data-label=\"OTX Pulses\">0&nbsp;</td>" .
