@@ -731,7 +731,7 @@ function displayNodeSwitcher() {
 function initialize() {
     global $config, $bitcoin, $currentNodeIndex;
     // Initialize current node from the query string
-    $currentNodeIndex = isset($_GET['node']) ? (int)$_GET['node'] - 1 : 1;
+    $currentNodeIndex = isset($_GET['node']) ? (int)$_GET['node'] - 1 : 0;
 
     if (isset($_GET['nopagination'])) {
         $config['peers_per_page'] = 1000;    
