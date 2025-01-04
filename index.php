@@ -117,7 +117,7 @@ $peerInfo = $init['peerInfo'];
             ?>
         </p>
     </nav>
-    <p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2024 Georg Engelmann</p>
+    <p><a href="https://github.com/georgengelmann/node-status" title="node-status">node-status</a> | Copyright &copy; 2020-2025 Georg Engelmann</p>
     <script src="script/main.js"></script>
 </footer>
 </body>

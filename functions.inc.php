@@ -633,6 +633,9 @@ function displayNodeInformation() {
             if (!isset($peer['banscore'])) {
                 $peer['banscore'] = 0;
             }
+            if (!isset($peer['pingtime'])) {
+				$peer['pingtime'] = 0;	
+			}
             
             echo "<td data-label=\"Version\">" . htmlentities($peer['subver']) .
                 "&nbsp;</td><td data-label=\"Direction\">" . $direction .
