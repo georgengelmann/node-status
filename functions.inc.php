@@ -7,13 +7,15 @@
  * @return string Formatted size with appropriate suffix (e.g., KB, MB)
  */
 function formatBytes($size, $precision = 2) {
-    if ($size < 0) {
-        return '0 B'; // Handle negative numbers as an error case.
+    if (!is_numeric($size) || $size < 0) {
+        return '0 B'; // Handle non-numeric and negative numbers as error cases.
     }
+
     if ($size == 0) {
         return '0 B'; // Explicitly handle the case where size is 0.
     }
 
+    $size = (float)$size; // Ensure $size is a float for division.
     $units = array('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
     $index = 0;
 
@@ -138,29 +140,26 @@ function removePortFromIPv6($ipv6Address) {
  */
 function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null, $updateInterval = 604800) {
     if (isIP($ip) && is_array($dnsbl_lookup) && !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-        // Check if the database connection and table name are provided
         if ($db !== null && $table !== null) {
-            // Check if the IP address exists in the database and if the timestamp is not expired
-            $query = "SELECT dnsbl, dnsbl_timestamp FROM $table WHERE ip_address = '$ip'";
-            $result = mysqli_query($db, $query);
+            $query = "SELECT dnsbl, dnsbl_timestamp FROM $table WHERE ip_address = ?";
+            $stmt = $db->prepare($query);
+            $stmt->bind_param("s", $ip);
+            $stmt->execute();
+            $result = $stmt->get_result();
 
             if ($result) {
-                $row = mysqli_fetch_assoc($result);
+                $row = $result->fetch_assoc();
                 if (!is_null($row['dnsbl']) && $row['dnsbl'] !== "") {
                     $timestamp = strtotime($row['dnsbl_timestamp']);
                     $currentTimestamp = time();
-                    // If the timestamp is still within the update interval, return the stored result
                     if (($currentTimestamp - $timestamp) <= $updateInterval) {
                         return $row['dnsbl'];
                     }
                 }
             }
         }
-        
 
-        // IP data is not in the database, or the timestamp is expired, perform the DNSBL lookup
         $listed = '';
-
         if ($ip) {
             $reverse_ip = implode('.', array_reverse(explode('.', $ip)));
             foreach ($dnsbl_lookup as $host) {
@@ -172,28 +171,25 @@ function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null, $updateInter
 
         if (empty($listed)) {
             $result = 'A record was not found';
-
             if ($db !== null && $table !== null) {
-                // Update the database with the new result and timestamp
                 $timestamp = date('Y-m-d H:i:s');
-                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES ('$ip', '$result', '$timestamp') 
-                    ON DUPLICATE KEY UPDATE dnsbl = '$result', dnsbl_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE dnsbl = ?, dnsbl_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $result, $timestamp, $result, $timestamp);
+                $stmt->execute();
             }
-
         } else {
-            // If a database connection and table name are provided, store the DNSBL lookup result and timestamp
             if ($db !== null && $table !== null) {
                 $timestamp = date('Y-m-d H:i:s');
-                // Use REPLACE INTO to insert or replace the data
-                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES ('$ip', '$listed', '$timestamp') 
-                    ON DUPLICATE KEY UPDATE dnsbl = '$listed', dnsbl_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, dnsbl, dnsbl_timestamp) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE dnsbl = ?, dnsbl_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $listed, $timestamp, $listed, $timestamp);
+                $stmt->execute();
             }
-
             $result = $listed;
         }
-
         return $result;
     } else {
         return 0;
@@ -212,57 +208,51 @@ function dnsbllookup($ip, $dnsbl_lookup, $db = null, $table = null, $updateInter
  */
 function AbuseIPDBCheck($ip, $apikey, $db = null, $table = null, $updateInterval = 604800) {
     if (isIP($ip) && preg_match('/^[a-z0-9]{80}$/', $apikey)) {
-        // Check if the database connection and table name are provided
         if ($db !== null && $table !== null) {
-            // Check if the IP is already in the database and if the timestamp is not expired
-            $query = "SELECT * FROM $table WHERE ip_address = '$ip'";
-            $result = mysqli_query($db, $query);
+            $query = "SELECT * FROM $table WHERE ip_address = ?";
+            $stmt = $db->prepare($query);
+            $stmt->bind_param("s", $ip);
+            $stmt->execute();
+            $result = $stmt->get_result();
 
-            if ($result && mysqli_num_rows($result) > 0) {
-                $row = mysqli_fetch_assoc($result);
-                if (!is_null($row['abuse_timestamp'])) {
-                    $timestamp = strtotime($row['abuse_timestamp']);
-                } else {
-                    $timestamp = 0;
-                }
+            if ($result && $result->num_rows > 0) {
+                $row = $result->fetch_assoc();
+                $timestamp = strtotime($row['abuse_timestamp']);
                 $currentTimestamp = time();
-                // If the timestamp is still within the update interval, return the stored result
                 if (($currentTimestamp - $timestamp) <= $updateInterval) {
                     return json_decode($row['abuse_data'], true);
                 }
             }
         }
 
-        // IP data is not in the database, or the timestamp is expired, make the AbuseIPDB API request
         $client = curl_init('https://api.abuseipdb.com/api/v2/check?ipAddress=' . $ip);
         curl_setopt($client, CURLOPT_HTTPHEADER, array('Content-Type:application/json', 'Accept:application/json', 'Key:'.$apikey));
         curl_setopt($client, CURLOPT_RETURNTRANSFER, true);
         $api_result = curl_exec($client);
         curl_close($client);
         $api_res = json_decode($api_result, true);
-       
+
         if ($api_res["data"]) {
-            // If a database connection and table name are provided, store the API result and timestamp
             if ($db !== null && $table !== null) {
                 $abuse_data = json_encode($api_res["data"]);
                 $timestamp = date('Y-m-d H:i:s');
-                // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
-                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES ('$ip', '$abuse_data', '$timestamp') 
-                    ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data', abuse_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE abuse_data = ?, abuse_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $abuse_data, $timestamp, $abuse_data, $timestamp);
+                $stmt->execute();
             }
-
             return $api_res["data"];
         } else {
-            // If no data is returned from the API, update the database entry with an empty abuse_data and timestamp
             if ($db !== null && $table !== null) {
                 $abuse_data = json_encode([]);
                 $timestamp = date('Y-m-d H:i:s');
-                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES ('$ip', '$abuse_data', '$timestamp') 
-                    ON DUPLICATE KEY UPDATE abuse_data = '$abuse_data', abuse_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, abuse_data, abuse_timestamp) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE abuse_data = ?, abuse_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $abuse_data, $timestamp, $abuse_data, $timestamp);
+                $stmt->execute();
             }
-
             return 0;
         }
     } else {
@@ -324,48 +314,48 @@ function queryOTX($ip, $apiKey) {
  * @return array The threat data for the IP as an associative array, or an empty array if no data is available or the IP is invalid.
  */
 function OTXIPCheck($ip, $apiKey, $db, $table, $updateInterval = 604800) {
-    if (filter_var($ip, FILTER_VALIDATE_IP)) { // Validate IP address format
+    if (filter_var($ip, FILTER_VALIDATE_IP)) {
         if ($db !== null && $table !== null) {
-            // Check if the IP data is already in the database and if the timestamp is not expired
-            $escaped_ip = mysqli_real_escape_string($db, $ip); // Escape the IP to prevent SQL injection
-            $query = "SELECT * FROM $table WHERE ip_address = '$escaped_ip'";
-            $result = mysqli_query($db, $query);
+            $query = "SELECT * FROM $table WHERE ip_address = ?";
+            $stmt = $db->prepare($query);
+            $stmt->bind_param("s", $ip);
+            $stmt->execute();
+            $result = $stmt->get_result();
 
-            if ($result && mysqli_num_rows($result) > 0) {
-                $row = mysqli_fetch_assoc($result);
+            if ($result && $result->num_rows > 0) {
+                $row = $result->fetch_assoc();
                 $timestamp = strtotime($row['otx_timestamp']);
                 $currentTimestamp = time();
-                // If the timestamp is still within the update interval, return the stored result
                 if (($currentTimestamp - $timestamp) <= $updateInterval) {
                     return json_decode($row['otx_data'], true);
                 }
             }
 
-            // IP data is not in the database or the timestamp is expired, make the OTX API request
             $response = queryOTX($ip, $apiKey);
             $otxData = json_decode($response, true);
 
             if (!empty($otxData)) {
-                // If a database connection and table name are provided, store the API result and timestamp
-                $otx_json = mysqli_real_escape_string($db, json_encode($otxData));
+                $otx_json = json_encode($otxData);
                 $timestamp = date('Y-m-d H:i:s');
-                // Use INSERT ... ON DUPLICATE KEY UPDATE to insert or update the data
-                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES ('$escaped_ip', '$otx_json', '$timestamp') 
-                                 ON DUPLICATE KEY UPDATE otx_data = '$otx_json', otx_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES (?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE otx_data = ?, otx_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $otx_json, $timestamp, $otx_json, $timestamp);
+                $stmt->execute();
                 return $otxData;
             } else {
-                // If no data is returned from the API, update the database entry with an empty otx_data and timestamp
-                $otx_json = mysqli_real_escape_string($db, json_encode([]));
+                $otx_json = json_encode([]);
                 $timestamp = date('Y-m-d H:i:s');
-                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES ('$escaped_ip', '$otx_json', '$timestamp') 
-                                 ON DUPLICATE KEY UPDATE otx_data = '$otx_json', otx_timestamp = '$timestamp'";
-                mysqli_query($db, $update_query);
+                $update_query = "INSERT INTO $table (ip_address, otx_data, otx_timestamp) VALUES (?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE otx_data = ?, otx_timestamp = ?";
+                $stmt = $db->prepare($update_query);
+                $stmt->bind_param("sssss", $ip, $otx_json, $timestamp, $otx_json, $timestamp);
+                $stmt->execute();
                 return [];
             }
         }
     } else {
-        return []; // Return an empty array if IP is not valid
+        return [];
     }
 }
 
@@ -399,12 +389,14 @@ function establishDatabaseConnection($dbname, $dbuser, $dbpass, $dbhost, $dbport
 /**
  * Processes and retrieves peer information from a Bitcoin node based on query parameters.
  * This function decides which type of peer information to fetch based on the presence
+ * of specific GET parameters like 'listbanned' or 'fulcrum'.
  *
  * Global Variables:
  *  - $bitcoin (Bitcoin): The Bitcoin client connection object used to fetch peer data.
  *
  * Query Parameters:
  *  - listbanned (bool): If present, fetches information about banned peers.
+ *  - fulcrum (bool): If present, fetches peer information from a specific fulcrum instance using a URL.
  *
  * Return:
  *  - array: Returns an array of peer information. Each entry is an associative array containing details
@@ -415,11 +407,11 @@ function establishDatabaseConnection($dbname, $dbuser, $dbpass, $dbhost, $dbport
  *  - Catches any exceptions thrown during the retrieval or processing of peer data and logs the error.
  */
 function processPeerInfo() {
-    global $bitcoin;
+	global $bitcoin;
     $peerInfo = [];
 
     try {
-        if (!isset($_GET['listbanned'])) {
+        if (!isset($_GET['listbanned']) && !isset($_GET['fulcrum'])) {
             $peerInfo = $bitcoin->getpeerinfo();
         } elseif (isset($_GET['listbanned'])) {
             $bannedNodes = $bitcoin->listbanned();
@@ -436,8 +428,32 @@ function processPeerInfo() {
                     "pingtime" => 0
                 );
             }
-        } 
-        if ($peerInfo == '' || is_null($peerInfo)) {
+        } elseif (isset($_GET['fulcrum'])) {
+			if (isset($_GET['instance'])) {
+				$instance = $_GET['instance'];
+			} else {
+				$instance = 0;	
+			}
+            $fpeers = file('https://electroncash.de/peers.php?instance=' . $instance);
+            foreach ($fpeers as $fpeer) {
+                $peers[] = explode(' ', $fpeer);
+            }
+            foreach ($peers as $peer) {
+                if ($peer[0] !== "" && $peer[0] !== "IP:PORT") {
+                    $peerInfo[] = array(
+                        "inbound" => true,
+                        "addr" => $peer[0],
+                        "subver" => $peer[1],
+                        "conntime" => 0,
+                        "startingheight" => 0,
+                        "bytessent" => $peer[3],
+                        "bytesrecv" => $peer[2],
+                        "pingtime" => 0
+                    );
+                }
+            }
+        }
+		if ($peerInfo == '' || is_null($peerInfo)) {
             $peerInfo = getDefaultPeerInfo();
         }
     } catch (Exception $e) {
@@ -492,22 +508,22 @@ function getDefaultPeerInfo() {
  * The function handles pagination, IP checks, and formats the output as an HTML table with comprehensive peer data.
  */
 function displayNodeInformation() {
-        global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
+		global $config, $peerInfo, $db, $emoji_flags, $totalPages, $currentPage;
 
-        // Define the number of items per page
+	    // Define the number of items per page
         if (isset($config['peers_per_page'])) {
             $itemsPerPage = $config['peers_per_page'];
-        } else {
-            $itemsPerPage = 25;
-        }
-    
+		} else {
+			$itemsPerPage = 25;
+		}
+	
         // Determine the total number of peers
-        if ($peerInfo != '') {
+	    if ($peerInfo != '') {
             $totalPeers = count($peerInfo);
-        } else {
-            $peerInfo = getDefaultPeerInfo();
-            $totalPeers = 1;    
-        }
+		} else {
+			$peerInfo = getDefaultPeerInfo();
+			$totalPeers = 1;	
+		}
 
         // Calculate the total number of pages
         $totalPages = ceil($totalPeers / $itemsPerPage);
@@ -521,12 +537,6 @@ function displayNodeInformation() {
         // Slice the peerInfo array to get only the items for the current page
         $pagePeers = array_slice($peerInfo, $startIndex, $itemsPerPage);
         
-        if (isset($config['db_table'])) {
-            $db_table = $config['db_table'];
-        } else {
-            $db_table = null;
-        }
-        
         foreach ($pagePeers as $peer) {
             
             if ($peer['inbound'] == true) {
@@ -536,35 +546,35 @@ function displayNodeInformation() {
             }
 
             $current_ip = extractIPAddress($peer['addr']);
-            
-            if (isIP($current_ip)) {
-                $peer_host = gethostbyaddr($current_ip);
-            } else {
-                $peer_host = $current_ip;    
-            }
+			
+			if (isIP($current_ip)) {
+			    $peer_host = gethostbyaddr($current_ip);
+			} else {
+				$peer_host = $current_ip;	
+			}
             
             if (isset($config['abuseipdb_apikey'])) {
                 if (isset($config['abuseipdb_interval'])) {
-                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $db_table, $config['abuseipdb_interval']);
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table'], $config['abuseipdb_interval']);
                 } else {
-                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $db_table);
+                    $abuseipdb = AbuseIPDBCheck($current_ip, $config['abuseipdb_apikey'], $db, $config['db_table']);
                 }
             }
-            
-            if (isset($config['otx_apikey'])) {
-                if (isset($config['otx_interval'])) {
-                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $db_table, $config['otx_interval']);
-                } else {
-                    $otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $db_table);
-                }
+			
+			if (isset($config['otx_apikey'])) {
+				if (isset($config['otx_interval'])) {
+					$otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table'], $config['otx_interval']);
+				} else {
+					$otx = OTXIPCheck($current_ip, $config['otx_apikey'], $db, $config['db_table']);
+				}
 
-            }
+			}
 
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
                 if (isset($config['dnsbl_interval'])) {
-                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $db_table, $config['dnsbl_interval']);
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table'], $config['dnsbl_interval']);
                 } else {
-                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $db_table);
+                    $dnsbl = dnsbllookup($current_ip, $config['dnsbl_lookup'], $db, $config['db_table']);
                 }
             }
                 
@@ -573,52 +583,52 @@ function displayNodeInformation() {
             echo "    <tr>\n    ";
             
             if (isset($config['abuseipdb_apikey'])) {
-                if (!isset($abuseipdb['countryCode']) || !array_key_exists($abuseipdb['countryCode'], $emoji_flags)) {
-                    $flag = $emoji_flags['WW'];    
-                    $country = 'World';
-                } else {
-                    $flag = $emoji_flags[$abuseipdb['countryCode']];
-                    $country = $abuseipdb['countryCode'];
-                }
+				if (!isset($abuseipdb['countryCode']) || !array_key_exists($abuseipdb['countryCode'], $emoji_flags)) {
+					$flag = $emoji_flags['WW'];	
+					$country = 'World';
+				} else {
+					$flag = $emoji_flags[$abuseipdb['countryCode']];
+					$country = $abuseipdb['countryCode'];
+				}
                 echo "<td data-label=\"Country\">" . $country . "&nbsp;" 
                      . $flag;
                 if (isset($abuseipdb['isTor']) && $abuseipdb['isTor'] === true) {
                     echo "&nbsp;Tor &#x1F9C5;";
                 }
-                if (isset($abuseipdb["abuseConfidenceScore"])) {
-                    $confidencescore = $abuseipdb["abuseConfidenceScore"];    
-                } else {
-                    $confidencescore = 0;
-                }
-                if (isset($abuseipdb['usageType'])) {
-                    $usagetype = $abuseipdb['usageType'];
-                } else {
-                    $usagetype = 0;
-                }
-                if (isset($abuseipdb['isp'])) {
-                    $isp = $abuseipdb['isp'];    
-                } else {
-                    $isp = 0;
-                }
+				if (isset($abuseipdb["abuseConfidenceScore"])) {
+					$confidencescore = $abuseipdb["abuseConfidenceScore"];	
+				} else {
+					$confidencescore = 0;
+				}
+				if (isset($abuseipdb['usageType'])) {
+					$usagetype = $abuseipdb['usageType'];
+				} else {
+					$usagetype = 0;
+				}
+				if (isset($abuseipdb['isp'])) {
+					$isp = $abuseipdb['isp'];	
+				} else {
+					$isp = 0;
+				}
                 echo "&nbsp;</td><td data-label=\"Abuse score\"><a href=\"https://www.abuseipdb.com/check/" 
                      . $current_ip . "\" title=\"AbuseIPDB Lookup " . $current_ip . "\">" .  $confidencescore .
                      "</a>&nbsp;</td><td data-label=\"Usage type\">" . $usagetype .
                      "&nbsp;</td><td data-label=\"ISP\">" . $isp . "&nbsp;</td>";
             }
-            
-            if (isset($config['otx_apikey'])) {
-                if (!isset($otx['asn'])) {
-                    $otx['asn'] = "Unknown";
-                }
-                if (isset($otx['pulse_info']['count']) && $otx['pulse_info']['count'] > 0) {
-                    echo "<td data-label=\"OTX Pulses\"><a href=\"https://otx.alienvault.com/indicator/ip/". $current_ip
-                        . "\" title=\"Alienvault OTX " . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
-                        . "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
-                } else {
-                    echo "<td data-label=\"OTX Pulses\">0&nbsp;</td>" .
-                     "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
-                }
-            }
+			
+			if (isset($config['otx_apikey'])) {
+				if (!isset($otx['asn'])) {
+					$otx['asn'] = "Unknown";
+				}
+				if (isset($otx['pulse_info']['count']) && $otx['pulse_info']['count'] > 0) {
+					echo "<td data-label=\"OTX Pulses\"><a href=\"https://otx.alienvault.com/indicator/ip/". $current_ip
+						. "\" title=\"Alienvault OTX " . $current_ip . "\">" . $otx['pulse_info']['count'] . "&nbsp;</a></td>"
+						. "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+				} else {
+					echo "<td data-label=\"OTX Pulses\">0&nbsp;</td>" .
+					 "<td data-label=\"ASN\">" . $otx['asn'] . "&nbsp;</td>";
+				}
+			}
 
 
             if ($config['dnsbl'] === 1 && is_array($config['dnsbl_lookup'])) {
@@ -629,14 +639,13 @@ function displayNodeInformation() {
             
             echo "<td data-label=\"IP:Port\"><a href=\"https://talosintelligence.com/reputation_center/lookup?search="
                . $current_ip . "\" title=\"Talos Intelligence " . $current_ip . "\">" . $peer['addr'] . "</a>&nbsp;</td>";
-                        
-            if (!isset($peer['banscore'])) {
-                $peer['banscore'] = 0;
-            }
-            if (!isset($peer['pingtime'])) {
+            			
+			if (!isset($peer['banscore'])) {
+				$peer['banscore'] = 0;
+			}
+			if (!isset($peer['pingtime'])) {
 				$peer['pingtime'] = 0;	
 			}
-            
             echo "<td data-label=\"Version\">" . htmlentities($peer['subver']) .
                 "&nbsp;</td><td data-label=\"Direction\">" . $direction .
                 "&nbsp;</td><td data-label=\"Connection time\">" . secondsToTime($conntime) .
@@ -662,24 +671,24 @@ function displayNodeInformation() {
  */
 function displayPagination() {
     // Construct the base URL without the 'page' parameter
-    global $totalPages, $currentPage;
+	global $totalPages, $currentPage;
     $queryParams = $_GET;
     unset($queryParams['page']); // Remove 'page' parameter if exists
     $baseUrl = $_SERVER['PHP_SELF'] . '?' . http_build_query($queryParams);
     $separator = count($queryParams) > 0 ? '&' : '';
-    if ($totalPages > 1) {
-        echo "<p>Page: ";
-        // Display pagination links
-        for ($i = 1; $i <= $totalPages; $i++) {
-            $link = $baseUrl . $separator . "page=$i";
-            if ($i == $currentPage) {
-                echo "<strong>$i</strong> ";
-            } else {
-                echo "<a href='$link'>$i</a> ";
-            }
-        }
-        echo "</p>";
-    }
+	if ($totalPages > 1) {
+		echo "<p>Page: ";
+		// Display pagination links
+		for ($i = 1; $i <= $totalPages; $i++) {
+			$link = $baseUrl . $separator . "page=$i";
+			if ($i == $currentPage) {
+				echo "<strong>$i</strong> ";
+			} else {
+				echo "<a href='$link'>$i</a> ";
+			}
+		}
+		echo "</p>";
+	}
 }
 
 /**
@@ -693,13 +702,13 @@ function displayPagination() {
  *  - Echoes HTML links to the browser, allowing node selection.
  */
 function displayNodeSwitcher() {
-    global $config;
-    $i = 1;
+	global $config;
+	$i = 1;
     foreach ($config['nodes'] as $nodes) {
-        echo "        <a href=\"?node=" . $i . '" title="' . $config['page_title'] . " (" . $nodes['name'] . ")\">"
-           . $nodes['name'] . "</a>&nbsp;\n";
-             $i++;
-    }    
+		echo "        <a href=\"?node=" . $i . '" title="' . $config['page_title'] . " (" . $nodes['name'] . ")\">"
+		   . $nodes['name'] . "</a>&nbsp;\n";
+			 $i++;
+    }	
 }
 
 /**
@@ -713,6 +722,7 @@ function displayNodeSwitcher() {
  *  - node (int): Optional. Specifies the node index to connect to. Defaults to the first node if unspecified or invalid.
  *  - nopagination (bool): Optional. If set, adjusts the peers_per_page setting to 1000 for the session.
  *  - listbanned (bool): Optional. If set, retrieves a list of banned peers instead of regular peer info.
+ *  - fulcrum (bool): Optional. If set, retrieves peer info from a specific fulcrum instance.
  * 
  * Outputs:
  *  - Returns an associative array containing:
@@ -747,7 +757,7 @@ function initialize() {
     $bitcoin = null;
     $uptime = 0;
     $networkInfo = $blockchainInfo = $peerInfo = [];
-    try {
+	try {
         $bitcoin = new Bitcoin(
             $config['nodes'][$currentNodeIndex]['user'],
             $config['nodes'][$currentNodeIndex]['pass'],
@@ -756,44 +766,38 @@ function initialize() {
         );
 
         $uptime = $bitcoin->uptime();
-        if ($uptime === null) {
-            $uptime = 0;
-        }
+		if ($uptime === null) {
+			$uptime = 0;
+		}
         $networkInfo = $bitcoin->getnettotals();
-        if ($networkInfo === null) {
-            $networkInfo = 0;
-        }
-        $blockchainInfo = $bitcoin->getblockchaininfo();
-        if ($blockchainInfo === null) {
-            $blockchainInfo = 0;    
-        }
+		if ($networkInfo === null) {
+        	$networkInfo = 0;
+		}
+		$blockchainInfo = $bitcoin->getblockchaininfo();
+		if ($blockchainInfo === null) {
+			$blockchainInfo = 0;	
+		}
         $peerInfo = processPeerInfo();
     } catch (Exception $e) {
         error_log("Bitcoin connection error: " . $e->getMessage());
-        $uptime = 0;
-        $networkInfo = 0;
-        $peerInfo = 0;
+		$uptime = 0;
+		$networkInfo = 0;
+		$peerInfo = 0;
         $peerInfo = getDefaultPeerInfo();
     }
 
     $db = null;
     try {
-        if (isset($config['db_name'],
+        $db = establishDatabaseConnection(
+            $config['db_name'],
             $config['db_user'],
             $config['db_pass'],
             $config['db_host'],
-            $config['db_port'])) {
-            $db = establishDatabaseConnection(
-                $config['db_name'],
-                $config['db_user'],
-                $config['db_pass'],
-                $config['db_host'],
-                $config['db_port']
-            );
-		}
+            $config['db_port']
+        );
     } catch (Exception $e) {
         error_log("Database connection error: " . $e->getMessage());
-        $peerInfo = getDefaultPeerInfo();
+		$peerInfo = getDefaultPeerInfo();
     }
 
     return [
